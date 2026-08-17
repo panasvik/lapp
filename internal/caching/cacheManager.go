@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sync"
 	"sync/atomic"
 
 	"github.com/h2non/bimg"
@@ -47,12 +48,13 @@ type CacheManager struct {
 	fastSearchMU sync.RWMutex
 	fastSearch   map[string]bool
 	//usageMap   map[string]*usage
-	cap      int64
-	size     atomic.Int64
-	cc       cacheCleaner
-	lc       lazyCacher
-	cleanReq chan<- struct{}
-	fmu      *CacheTable
+	cap          int64
+	size         atomic.Int64
+	cc           cacheCleaner
+	lc           lazyCacher
+	cleanReq     chan<- struct{}
+	fmu          *CacheTable
+	requestGroup singleflight.Group
 }
 
 func (c *CacheManager) GetImg(imgPath string) (string, error) {
@@ -67,13 +69,20 @@ func (c *CacheManager) GetImg(imgPath string) (string, error) {
 
 func (c *CacheManager) LoadNGetImg(imgPath string) ([]byte, error) {
 	origImgPath := filepath.Join(OriginalsDir, imgPath)
-	imgBytes, err, _ := requestGroup.Do(imgPath, func() (interface{}, error) {
+
+	res, err, _ := c.requestGroup.Do(imgPath, func() (interface{}, error) {
 		return c.loadImg(origImgPath)
 	})
 
 	if err != nil {
 		return nil, fmt.Errorf("could not get img: %w", err)
 	}
+
+	imgBytes, ok := res.([]byte)
+	if !ok {
+		return nil, fmt.Errorf("internal error: singleflight returned unexpected type: %T", res)
+	}
+
 	cacheImgPath := filepath.Join(CacheDir, imgPath)
 	c.lc.LazyWrite(imgBytes, cacheImgPath)
 	return imgBytes, nil

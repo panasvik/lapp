@@ -7,3 +7,5 @@ require (
 	github.com/mattn/go-sqlite3 v1.14.49
 	github.com/rwcarlsen/goexif v0.0.0-20190401172101-9e8deecbddbd
 )
+
+require golang.org/x/sync v0.22.0 // indirect
