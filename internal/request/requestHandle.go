@@ -9,7 +9,7 @@ import (
 	"net/http"
 )
 
-type Handling struct {
+type Handler struct {
 	ctx context.Context
 	ldb *db.LoveAppDB
 	cm  *caching.CacheManager
@@ -25,7 +25,7 @@ type imgReq struct {
 	Path string `json:"path"`
 }
 
-func StartReqHandling(h *Handling) {
+func StartReqHandling(h *Handler) {
 	http.HandleFunc("/api/image", h.imgHandler)
 	http.HandleFunc("/api/dates", h.manifestHandler)
 
@@ -37,7 +37,7 @@ func StartReqHandling(h *Handling) {
 	}
 }
 
-func (h *Handling) imgHandler(w http.ResponseWriter, r *http.Request) {
+func (h *Handler) imgHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	w.Header().Set("Access-Control-Allow-Origin", "*")
 
@@ -60,7 +60,7 @@ func (h *Handling) imgHandler(w http.ResponseWriter, r *http.Request) {
 	w.Write(imgBytes)
 }
 
-func (h *Handling) manifestHandler(w http.ResponseWriter, r *http.Request) {
+func (h *Handler) manifestHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	w.Header().Set("Access-Control-Allow-Origin", "*")
 	var req ManifestReq
@@ -82,4 +82,9 @@ func (h *Handling) manifestHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.WriteHeader(http.StatusOK)
+}
+
+func NewHandler(ctx context.Context, ldb *db.LoveAppDB, cm *caching.CacheManager, fmu *caching.CacheTable) *Handler {
+	return &Handler{
+		ctx, ldb, cm, fmu}
 }

@@ -1,19 +1,39 @@
 package main
 
 import (
+	"ImageCacheProject/internal/caching"
+	"ImageCacheProject/internal/db"
+	"ImageCacheProject/internal/request"
+	"bufio"
+	"context"
+	"fmt"
 	"log/slog"
 	"os"
+	"time"
 )
 
 func main() {
-	//setUpLogger()
-	//ctx, cancel := context.WithTimeout(context.Background(), time.Hour)
-	//ldb, err := db.Connect()
-	//defer ldb.Close()
-	//fmu := caching.NewTable()
-	//caching.InitPaths(".")
-	//cacheManager := caching.InitCache(ctx, fmu)
+	setUpLogger()
+	ctx, cancel := context.WithTimeout(context.Background(), time.Hour)
+	scanner := bufio.NewScanner(os.Stdin)
+	go readInput(cancel, scanner)
+	ldb, err := db.Connect()
+	if err != nil {
+		fmt.Print("main: ", err.Error())
+		return
+	}
+	defer func() {
+		err = ldb.Close()
+		if err != nil {
+			fmt.Print("main: ", err.Error())
+		}
+	}()
+	fmu := caching.NewTable()
+	caching.InitPaths(".")
+	cacheManager := caching.InitCache(ctx, fmu)
 
+	handler := request.NewHandler(ctx, ldb, cacheManager, fmu)
+	request.StartReqHandling(handler)
 }
 
 func setUpLogger() {
@@ -29,4 +49,14 @@ func setUpLogger() {
 
 	slog.SetDefault(logger)
 
+}
+
+func readInput(cancel context.CancelFunc, scanner *bufio.Scanner) {
+	for scanner.Scan() {
+		line := scanner.Text()
+		if line == "exit" {
+			cancel()
+			break
+		}
+	}
 }

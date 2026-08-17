@@ -6,7 +6,6 @@ import (
 	"sync"
 )
 
-// FileState не содержит указателей! GC не будет это сканировать.
 type FileState struct {
 	readers  int  // количество текущих горутин-читателей
 	toDelete bool // флаг, что файл заказан на удаление
