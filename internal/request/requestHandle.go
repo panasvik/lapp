@@ -1,0 +1,85 @@
+package request
+
+import (
+	"ImageCacheProject/internal/caching"
+	"ImageCacheProject/internal/db"
+	"context"
+	"encoding/json"
+	"fmt"
+	"net/http"
+)
+
+type Handling struct {
+	ctx context.Context
+	ldb *db.LoveAppDB
+	cm  *caching.CacheManager
+	fmu *caching.CacheTable
+}
+
+type ManifestReq struct {
+	Date   int `json:"date"`
+	UserID int `json:"id"`
+}
+
+type imgReq struct {
+	Path string `json:"path"`
+}
+
+func StartReqHandling(h *Handling) {
+	http.HandleFunc("/api/image", h.imgHandler)
+	http.HandleFunc("/api/dates", h.manifestHandler)
+
+	fmt.Println("Server started and listening to 8080...")
+
+	err := http.ListenAndServe(":8080", nil)
+	if err != nil {
+		err = fmt.Errorf("main: error starting server %v", err)
+	}
+}
+
+func (h *Handling) imgHandler(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Access-Control-Allow-Origin", "*")
+
+	var req imgReq
+
+	err := json.NewDecoder(r.Body).Decode(&req)
+	if err != nil {
+		http.Error(w, "wrong JSON format", http.StatusBadRequest)
+		return
+	}
+	defer r.Body.Close()
+
+	cacheImgPath, err := h.cm.GetImg(req.Path)
+	if err == nil {
+		http.ServeFile(w, r, cacheImgPath)
+		return
+	}
+
+	imgBytes, err := h.cm.LoadNGetImg(req.Path)
+	w.Write(imgBytes)
+}
+
+func (h *Handling) manifestHandler(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Access-Control-Allow-Origin", "*")
+	var req ManifestReq
+
+	err := json.NewDecoder(r.Body).Decode(&req)
+	if err != nil {
+		http.Error(w, "wrong JSON format", http.StatusBadRequest)
+		return
+	}
+	defer r.Body.Close()
+
+	imgPaths, err := h.ldb.GetNames(req.Date, req.UserID)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	if err := json.NewEncoder(w).Encode(imgPaths); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	w.WriteHeader(http.StatusOK)
+}
