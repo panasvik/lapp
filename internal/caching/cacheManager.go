@@ -6,10 +6,10 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"sync"
 	"sync/atomic"
 
 	"github.com/h2non/bimg"
+	"golang.org/x/sync/singleflight"
 )
 
 var (
