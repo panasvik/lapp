@@ -25,38 +25,55 @@ func NewTable() *CacheTable {
 	}
 }
 
-func (c *CacheTable) CacheReadFile(path string) ([]byte, error) {
+func (c *CacheTable) AddReader(path string) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	state, exists := c.items[path]
+	if !exists {
+		state = c.AddFileState(path, 0)
+	}
+	state.readers++
+	c.items[path] = state
+}
 
+func (c *CacheTable) AddFileState(path string, numReaders int) FileState {
+	fs := FileState{numReaders, false}
+	c.items[path] = fs
+	return fs
+}
+
+func (c *CacheTable) CacheLockFile(path string) error {
 	c.mu.Lock()
 	state, exists := c.items[path]
 
 	if !exists || state.toDelete {
 		c.mu.Unlock()
-		return nil, errors.New("file not found or being deleted")
+		return errors.New("file not found or being deleted")
 	}
-
+	c.diskSemaphore <- struct{}{}
 	state.readers++
 	c.items[path] = state
 	c.mu.Unlock()
+	return nil
+}
 
-	defer func() {
-		c.mu.Lock()
-		st := c.items[path]
-		st.readers--
-		c.items[path] = st
+func (c *CacheTable) CacheUnlockFile(path string) {
+	c.mu.Lock()
+	st := c.items[path]
+	st.readers--
+	c.items[path] = st
 
-		needDelete := st.toDelete && st.readers == 0
-		if needDelete {
-			delete(c.items, path)
-		}
-		c.mu.Unlock()
+	needDelete := st.toDelete && st.readers == 0
+	if needDelete {
+		delete(c.items, path)
+	}
+	c.mu.Unlock()
 
-		if needDelete {
-			os.Remove(path)
-		}
-	}()
+	if needDelete {
+		os.Remove(path)
+	}
+	<-c.diskSemaphore
 
-	return c.ReadFile(path)
 }
 
 func (c *CacheTable) CleanUpFile(path string) error {
