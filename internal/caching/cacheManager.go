@@ -156,7 +156,8 @@ func InitCache(ctxP context.Context, fmu *CacheTable) *CacheManager {
 		ctx:         ctx,
 		restartChan: make(chan *restartInfo, 10),
 		cancel:      cancel,
-		errChan:     make(chan error, 10)}
+		errChan:     make(chan error, 10),
+		fmu:         fmu}
 	cm.cc = ce
 	cm.lc = wb
 	cm.cc.CleanAll()
@@ -182,4 +183,12 @@ func InitPaths(basePath string) {
 
 	OriginalsDir = filepath.Join(basePath, "assets", "uploads")
 	CacheDir = filepath.Join(basePath, "assets", "image_cache")
+}
+
+func (c *CacheManager) LockFile(path string) (err error) {
+	return c.fmu.CacheLockFile(path)
+}
+
+func (c *CacheManager) UnlockFile(path string) {
+	c.fmu.CacheUnlockFile(path)
 }
