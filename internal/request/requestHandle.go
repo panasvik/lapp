@@ -52,12 +52,26 @@ func (h *Handler) imgHandler(w http.ResponseWriter, r *http.Request) {
 
 	cacheImgPath, err := h.cm.GetImg(req.Path)
 	if err == nil {
+		err = h.cm.LockFile(req.Path)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
 		http.ServeFile(w, r, cacheImgPath)
+		h.cm.UnlockFile(req.Path)
 		return
 	}
 
 	imgBytes, err := h.cm.LoadNGetImg(req.Path)
-	w.Write(imgBytes)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	_, err = w.Write(imgBytes)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
 }
 
 func (h *Handler) manifestHandler(w http.ResponseWriter, r *http.Request) {

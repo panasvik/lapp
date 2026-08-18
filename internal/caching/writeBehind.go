@@ -36,6 +36,7 @@ type restartInfo struct {
 type WriteBehind struct {
 	ctx         context.Context
 	restartChan chan *restartInfo
+	fmu         *CacheTable
 	cm          cacheManager
 	cancel      context.CancelFunc
 	errChan     chan error
@@ -76,6 +77,7 @@ func (wb *WriteBehind) lazyWrite(imgBytes []byte, imgCachePath string, retryCoun
 		}
 	}
 	wb.cm.ConfirmAddCache(imgCachePath)
+	wb.fmu.AddFileState(imgCachePath, 0)
 }
 
 func (wb *WriteBehind) restarter(startStop <-chan struct{}) {
