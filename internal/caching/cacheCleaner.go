@@ -33,17 +33,19 @@ func (ce *cacheEvictor) runCleanUpWorker() {
 		case <-ce.ctx.Done():
 			return
 		case <-ce.cleanReq:
-			ce.clean()
+			{
+				cutoffTime := time.Now().Add(-MaxAge)
+				ce.clean(cutoffTime)
+			}
 		}
 	}
 }
 
-func (ce *cacheEvictor) clean() {
+func (ce *cacheEvictor) clean(cutoffTime time.Time) {
 	select {
 	case <-ce.ctx.Done():
 		return
 	default:
-		cutoffTime := time.Now().Add(-MaxAge)
 		err := filepath.WalkDir(CacheDir, func(path string, d os.DirEntry, err error) error {
 			return ce.eval(cutoffTime, path, d, err)
 		})
@@ -84,31 +86,7 @@ func (ce *cacheEvictor) eval(cutoffTime time.Time, path string, d os.DirEntry, e
 }
 
 func (ce *cacheEvictor) CleanAll() {
-	err := filepath.WalkDir(CacheDir, func(path string, d os.DirEntry, err error) error {
-		if err != nil {
-			return err
-		}
-		if d.IsDir() {
-			return nil
-		}
-		removeErr := ce.fmu.CleanUpFile(path)
-		info, err := d.Info()
-		if err != nil {
-			return nil
-		}
-		fSize := info.Size()
-		if removeErr != nil {
-			log.Printf("error deleting file %s: %v\n", path, removeErr)
-		} else {
-			log.Printf("deleted: %s\n", path)
-			ce.cm.ConfirmRemoveCache(path)
-			ce.cm.AddSize(-fSize)
-		}
-		return nil
-	})
-	if err != nil {
-		log.Printf("error scanning cache: %v\n", err)
-	}
+	ce.clean(time.Now())
 }
 
 func (ce *cacheEvictor) Stop() {
