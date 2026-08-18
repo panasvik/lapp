@@ -1,4 +1,4 @@
-package main
+package assets
 
 import (
 	"bufio"
@@ -9,7 +9,7 @@ import (
 	"sync"
 )
 
-func main() {
+func cacheDirCleanUp() {
 	ctx, cancel := context.WithCancel(context.Background())
 	root := filepath.Join(".", "assets", "uploads")
 

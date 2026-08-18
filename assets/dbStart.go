@@ -1,4 +1,4 @@
-package main
+package assets
 
 import (
 	"database/sql"
@@ -15,7 +15,7 @@ import (
 //go:embed uploads/*
 var assetsFS embed.FS
 
-func main() {
+func start() {
 	err := initAndPopulateDB("loveApp.db")
 	if err != nil {
 		log.Fatalf("Ошибка при работе с БД: %v", err)
