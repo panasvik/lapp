@@ -30,3 +30,6 @@
 /assets/uploads/29/
 /assets/uploads/30/
 /assets/uploads/31/
+.dockerignore
+Dockerfile
+Dockerfile.debug
