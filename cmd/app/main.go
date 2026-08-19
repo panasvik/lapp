@@ -7,8 +7,12 @@ import (
 	"bufio"
 	"context"
 	"fmt"
+	"log"
 	"log/slog"
+	"net/http"
 	"os"
+	"os/signal"
+	"syscall"
 	"time"
 )
 
@@ -16,7 +20,8 @@ func main() {
 	setUpLogger()
 	ctx, cancel := context.WithTimeout(context.Background(), time.Hour)
 	scanner := bufio.NewScanner(os.Stdin)
-	go readInput(cancel, scanner)
+	cancelChan := make(chan struct{})
+	go readInput(cancelChan, scanner)
 	ldb, err := db.Connect()
 	if err != nil {
 		fmt.Print("main: ", err.Error())
@@ -33,7 +38,33 @@ func main() {
 	cacheManager := caching.InitCache(ctx, fmu)
 
 	handler := request.NewHandler(ctx, ldb, cacheManager, fmu)
-	request.StartReqHandling(handler)
+	srv := &http.Server{
+		Addr: ":8080",
+	}
+	request.StartReqHandling(srv, handler)
+
+	quit := make(chan os.Signal, 1)
+	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
+
+	select {
+	case <-quit:
+
+	case <-cancelChan:
+
+	}
+	cancel()
+	StopServer(srv)
+}
+
+func StopServer(srv *http.Server) {
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	// 6. Вызываем Shutdown
+	if err := srv.Shutdown(ctx); err != nil {
+		log.Fatalf("Ошибка при остановке сервера: %v", err)
+	}
 }
 
 func setUpLogger() {
@@ -51,11 +82,11 @@ func setUpLogger() {
 
 }
 
-func readInput(cancel context.CancelFunc, scanner *bufio.Scanner) {
+func readInput(cancelChan chan<- struct{}, scanner *bufio.Scanner) {
 	for scanner.Scan() {
 		line := scanner.Text()
 		if line == "exit" {
-			cancel()
+			cancelChan <- struct{}{}
 			break
 		}
 	}
