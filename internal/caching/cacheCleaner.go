@@ -10,8 +10,8 @@ import (
 
 const (
 	MaxAge   = 24 * time.Hour
-	highMark = int64(0.9 * float64(initCap))
-	lowMark  = int64(0.7 * float64(initCap))
+	highMark = int64(initCap * 9 / 10)
+	lowMark  = int64(initCap * 7 / 10)
 )
 
 type cacheEvictor struct {
@@ -36,6 +36,7 @@ func (ce *cacheEvictor) runCleanUpWorker() {
 			{
 				cutoffTime := time.Now().Add(-MaxAge)
 				ce.clean(cutoffTime)
+				ce.startStop <- struct{}{}
 			}
 		}
 	}
@@ -52,7 +53,6 @@ func (ce *cacheEvictor) clean(cutoffTime time.Time) {
 		if err != nil {
 			log.Printf("error scanning cache: %v\n", err)
 		}
-		ce.startStop <- struct{}{}
 	}
 
 }
