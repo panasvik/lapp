@@ -138,8 +138,8 @@ func (c *CacheManager) GetCap() int64 {
 }
 
 func InitCache(ctxP context.Context, fmu *CacheTable) *CacheManager {
-	cleanChan := make(chan struct{})
-	startStop := make(chan struct{})
+	cleanChan := make(chan struct{}, 1)
+	startStop := make(chan struct{}, 1)
 	ctx, cancel := context.WithCancel(ctxP)
 	cm := &CacheManager{
 		fastSearch: make(map[string]bool),
@@ -151,13 +151,15 @@ func InitCache(ctxP context.Context, fmu *CacheTable) *CacheManager {
 		cleanReq:  cleanChan,
 		cancel:    cancel,
 		fmu:       fmu,
-		startStop: startStop}
+		startStop: startStop,
+		cm:        cm}
 	wb := &WriteBehind{
 		ctx:         ctx,
 		restartChan: make(chan *restartInfo, 10),
 		cancel:      cancel,
 		errChan:     make(chan error, 10),
-		fmu:         fmu}
+		fmu:         fmu,
+		cm:          cm}
 	cm.cc = ce
 	cm.lc = wb
 	cm.cc.CleanAll()

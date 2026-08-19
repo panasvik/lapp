@@ -75,6 +75,7 @@ func (wb *WriteBehind) lazyWrite(imgBytes []byte, imgCachePath string, retryCoun
 		if err != nil {
 			wb.errChan <- fmt.Errorf("%s %w", tmpPath, ErrTmpRename)
 		}
+		return
 	}
 	wb.cm.ConfirmAddCache(imgCachePath)
 	wb.fmu.AddFileState(imgCachePath, 0)

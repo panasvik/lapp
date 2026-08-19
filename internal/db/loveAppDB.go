@@ -5,6 +5,8 @@ import (
 	"errors"
 	"fmt"
 	"sync/atomic"
+
+	_ "github.com/mattn/go-sqlite3"
 )
 
 var (
@@ -18,7 +20,7 @@ type LoveAppDB struct {
 }
 
 func Connect() (*LoveAppDB, error) {
-	db, err := sql.Open("sqlite", "app_data.db")
+	db, err := sql.Open("sqlite3", "loveApp.db")
 	if err != nil {
 		return nil, err
 	}
