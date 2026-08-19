@@ -9,7 +9,7 @@ import (
 	"net/http"
 )
 
-type Handler struct {
+type HandlerManager struct {
 	ctx context.Context
 	ldb *db.LoveAppDB
 	cm  *caching.CacheManager
@@ -25,19 +25,23 @@ type imgReq struct {
 	Path string `json:"path"`
 }
 
-func StartReqHandling(h *Handler) {
+func StartReqHandling(srv *http.Server, h *HandlerManager) {
 	http.HandleFunc("/api/image", h.imgHandler)
 	http.HandleFunc("/api/dates", h.manifestHandler)
 
 	fmt.Println("Server started and listening to 8080...")
 
-	err := http.ListenAndServe(":8080", nil)
+	go startListening(srv)
+}
+
+func startListening(srv *http.Server) {
+	err := srv.ListenAndServe()
 	if err != nil {
-		err = fmt.Errorf("main: error starting server %v", err)
+		err = fmt.Errorf("error starting server %v", err)
 	}
 }
 
-func (h *Handler) imgHandler(w http.ResponseWriter, r *http.Request) {
+func (h *HandlerManager) imgHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	w.Header().Set("Access-Control-Allow-Origin", "*")
 
@@ -74,7 +78,7 @@ func (h *Handler) imgHandler(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func (h *Handler) manifestHandler(w http.ResponseWriter, r *http.Request) {
+func (h *HandlerManager) manifestHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	w.Header().Set("Access-Control-Allow-Origin", "*")
 	var req ManifestReq
@@ -98,7 +102,7 @@ func (h *Handler) manifestHandler(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusOK)
 }
 
-func NewHandler(ctx context.Context, ldb *db.LoveAppDB, cm *caching.CacheManager, fmu *caching.CacheTable) *Handler {
-	return &Handler{
+func NewHandler(ctx context.Context, ldb *db.LoveAppDB, cm *caching.CacheManager, fmu *caching.CacheTable) *HandlerManager {
+	return &HandlerManager{
 		ctx, ldb, cm, fmu}
 }
