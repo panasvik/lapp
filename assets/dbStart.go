@@ -1,7 +1,6 @@
 package assets
 
 import (
-	"database/sql"
 	"embed"
 	"fmt"
 	"io/fs"
@@ -15,68 +14,39 @@ import (
 //go:embed uploads/*
 var assetsFS embed.FS
 
-func start() {
-	err := initAndPopulateDB("loveApp.db")
-	if err != nil {
-		log.Fatalf("Ошибка при работе с БД: %v", err)
-	}
-	fmt.Println("База данных успешно создана и заполнена!")
+type RowData struct {
+	UserID int
+	Path   string
+	Date   int
 }
 
-// initAndPopulateDB создает SQLite БД, таблицу и заполняет ее файлами
-func initAndPopulateDB(dbPath string) error {
-	db, err := sql.Open("sqlite3", dbPath)
-	if err != nil {
-		return fmt.Errorf("не удалось открыть бд: %w", err)
-	}
-	defer db.Close()
+func PopulateDB(data chan<- RowData, errChan chan<- error) {
+	defer close(errChan)
 
-	createTableSQL := `
-	CREATE TABLE IF NOT EXISTS images (
-		userID INTEGER,
-		img_path TEXT,
-		date INTEGER
-	);`
+	var walkErr error
+	defer func() { errChan <- walkErr }()
 
-	if _, err := db.Exec(createTableSQL); err != nil {
-		return fmt.Errorf("не удалось создать таблицу: %w", err)
-	}
+	defer close(data)
 
-	entries, err := fs.ReadDir(assetsFS, "uploads")
-	if err != nil {
-		return fmt.Errorf("не удалось прочитать директорию uploads: %w", err)
-	}
-
-	insertSQL := `INSERT INTO images (userID, img_path, date) VALUES (?, ?, ?)`
-	stmt, err := db.Prepare(insertSQL)
-	if err != nil {
-		return fmt.Errorf("ошибка подготовки запроса: %w", err)
-	}
-	defer stmt.Close()
-
-	for _, entry := range entries {
-		if entry.IsDir() {
-			continue
+	walkErr = fs.WalkDir(assetsFS, "uploads", func(path string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if d.IsDir() {
+			return nil
 		}
 
-		imgPath := "uploads/" + entry.Name()
-		// Жестко задаем userID равным 0 для всех файлов
 		userID := 0
-
-		// Извлекаем дату из EXIF
-		dateInt, err := extractEXIFDate(assetsFS, imgPath)
-		if err != nil {
-			log.Printf("Предупреждение: не удалось получить EXIF дату для %s: %v. В базу будет записан 0.", imgPath, err)
+		dateInt, extractErr := extractEXIFDate(assetsFS, path)
+		if extractErr != nil {
+			log.Printf("Предупреждение: не удалось получить EXIF дату для %s: %v. В базу будет записан 0.", path, extractErr)
 			dateInt = 0
 		}
 
-		_, err = stmt.Exec(userID, imgPath, dateInt)
-		if err != nil {
-			log.Printf("Предупреждение: не удалось добавить файл %s в БД: %v", imgPath, err)
-		}
-	}
+		data <- RowData{UserID: userID, Path: path, Date: dateInt}
 
-	return nil
+		return nil
+	})
 }
 
 // extractEXIFDate читает файл из embed.FS и пытается извлечь дату из EXIF

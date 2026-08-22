@@ -1,9 +1,11 @@
 package db
 
 import (
+	"ImageCacheProject/assets"
 	"database/sql"
 	"errors"
 	"fmt"
+	"log"
 	"sync/atomic"
 
 	_ "github.com/mattn/go-sqlite3"
@@ -35,7 +37,7 @@ func (db *LoveAppDB) fastGetNames(targetDate int, userID int) (names []string, e
 		SELECT img_path
 		FROM images
 		WHERE userID = ? AND date = ?`
-	rows, err := db.Query(query, userID, userID, targetDate)
+	rows, err := db.Query(query, userID, targetDate)
 	defer rows.Close()
 
 	if err != nil {
@@ -104,4 +106,50 @@ func (db *LoveAppDB) GetNames(targetDate int, userID int) (names []string, err e
 	}
 
 	return names, nil
+}
+
+func ColdBoot() {
+	err := initAndPopulateDB("loveApp.db")
+	if err != nil {
+		log.Fatalf("Ошибка при работе с БД: %v", err)
+	}
+	fmt.Println("База данных успешно создана и заполнена!")
+}
+
+// initAndPopulateDB создает SQLite БД, таблицу и заполняет ее файлами
+func initAndPopulateDB(dbPath string) error {
+	db, err := sql.Open("sqlite3", dbPath)
+	if err != nil {
+		return fmt.Errorf("не удалось открыть бд: %w", err)
+	}
+	defer db.Close()
+
+	createTableSQL := `
+	CREATE TABLE IF NOT EXISTS images (
+		userID INTEGER,
+		img_path TEXT,
+		date INTEGER
+	);`
+
+	if _, err := db.Exec(createTableSQL); err != nil {
+		return fmt.Errorf("не удалось создать таблицу: %w", err)
+	}
+
+	insertSQL := `INSERT INTO images (userID, img_path, date) VALUES (?, ?, ?)`
+	stmt, err := db.Prepare(insertSQL)
+	if err != nil {
+		return fmt.Errorf("ошибка подготовки запроса: %w", err)
+	}
+	defer stmt.Close()
+
+	data := make(chan assets.RowData, 5)
+	errChan := make(chan error)
+	go assets.PopulateDB(data, errChan)
+	for item := range data {
+		_, err = stmt.Exec(item.UserID, item.Path, item.Date)
+		if err != nil {
+			log.Printf("Предупреждение: не удалось добавить файл %s в БД: %v", item.Path, err)
+		}
+	}
+	return <-errChan
 }
