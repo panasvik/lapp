@@ -1,0 +1,33 @@
+# === Этап 1: Сборка с отладчиком ===
+FROM golang:1.26-alpine AS builder
+
+WORKDIR /app
+RUN apk add --no-cache gcc musl-dev pkgconf vips-dev
+
+# 1. Устанавливаем отладчик Delve
+RUN go install github.com/go-delve/delve/cmd/dlv@latest
+
+COPY go.mod go.sum ./
+RUN go mod download
+COPY . .
+
+# 2. Собираем приложение БЕЗ оптимизаций (-gcflags="all=-N -l")
+RUN CGO_ENABLED=1 GOOS=linux go build -gcflags="all=-N -l" -o /my-app ./cmd/app
+
+# === Этап 2: Финальный образ ===
+FROM alpine:latest
+WORKDIR /
+RUN apk add --no-cache vips tzdata
+
+COPY --from=builder /my-app /my-app
+COPY --from=builder /app/loveApp.db /loveApp.db
+# 3. Копируем отладчик из первого этапа
+COPY --from=builder /go/bin/dlv /dlv
+
+# 8080 - порт сервера, 40000 - порт отладчика
+EXPOSE 8080 40000
+
+# 4. Запускаем приложение не напрямую, а через Delve
+ENTRYPOINT ["/dlv", "--listen=:40000", "--headless=true", "--api-version=2", "--accept-multiclient", "exec", "/my-app", "--"]
+
+CMD ["-coldboot=false"]

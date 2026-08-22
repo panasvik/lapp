@@ -18,7 +18,7 @@ type HandlerManager struct {
 
 type ManifestReq struct {
 	Date   int `json:"date"`
-	UserID int `json:"id"`
+	UserID int `json:"UserID"`
 }
 
 type imgReq struct {
@@ -27,7 +27,7 @@ type imgReq struct {
 
 func StartReqHandling(srv *http.Server, h *HandlerManager) {
 	http.HandleFunc("/api/image", h.imgHandler)
-	http.HandleFunc("/api/dates", h.manifestHandler)
+	http.HandleFunc("/api/manifest", h.manifestHandler)
 
 	fmt.Println("Server started and listening to 8080...")
 

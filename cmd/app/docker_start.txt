@@ -1,0 +1,2 @@
+docker build -f Dockerfile.debug -t img-cache-debug .
+docker run --rm -p 8080:8080 -p 40000:40000 --cap-add=SYS_PTRACE --security-opt="seccomp=unconfined" img-cache-debug

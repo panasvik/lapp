@@ -8,4 +8,10 @@ require (
 	github.com/rwcarlsen/goexif v0.0.0-20190401172101-9e8deecbddbd
 )
 
-require golang.org/x/sync v0.22.0 // indirect
+require (
+	github.com/davidbyttow/govips/v2 v2.18.0 // indirect
+	golang.org/x/image v0.38.0 // indirect
+	golang.org/x/net v0.52.0 // indirect
+	golang.org/x/sync v0.22.0 // indirect
+	golang.org/x/text v0.35.0 // indirect
+)
