@@ -33,3 +33,5 @@
 .dockerignore
 Dockerfile
 Dockerfile.debug
+/cmd/app/DBBuilder.exe
+/assets/cache/

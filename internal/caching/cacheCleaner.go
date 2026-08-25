@@ -79,7 +79,6 @@ func (ce *cacheEvictor) eval(cutoffTime time.Time, path string, d os.DirEntry, e
 		} else {
 			log.Printf("deleted: %s\n", path)
 			ce.cm.AddSize(-fSize)
-			ce.cm.ConfirmRemoveCache(path)
 		}
 	}
 	return nil

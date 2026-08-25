@@ -1,12 +1,13 @@
 package caching
 
 import (
+	"ImageCacheProject/assets"
 	"context"
-	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
-	"sync"
+	"strconv"
+	"strings"
 	"sync/atomic"
 
 	"github.com/h2non/bimg"
@@ -14,8 +15,8 @@ import (
 )
 
 var (
-	OriginalsDir = "./assets/uploads"
-	CacheDir     = "./assets/image_cache"
+	OriginalsDir string
+	CacheDir     string
 )
 
 const (
@@ -23,13 +24,9 @@ const (
 	initCap  = 4 * 1024 * megabyte
 )
 
-var (
-	ErrImgNotFound = errors.New("img not found")
-)
-
 type lazyCacher interface {
 	Start(startStop <-chan struct{})
-	LazyWrite(imgBytes []byte, cacheImgPath string)
+	LazyWrite(imgBytes []byte, dst string)
 	Stop()
 }
 
@@ -45,8 +42,6 @@ type cacheCleaner interface {
 //}
 
 type CacheManager struct {
-	fastSearchMU sync.RWMutex
-	fastSearch   map[string]bool
 	//usageMap   map[string]*usage
 	cap          int64
 	size         atomic.Int64
@@ -57,20 +52,25 @@ type CacheManager struct {
 	requestGroup singleflight.Group
 }
 
-func (c *CacheManager) GetImg(imgPath string) (string, error) {
-	if !c.fastSearch[imgPath] {
+func (c *CacheManager) GetImg(imgName string) (string, error) {
+	cachePath := filepath.Join(CacheDir, imgName)
+
+	if !c.fmu.Exists(cachePath) {
 		return "", fmt.Errorf("cache: %w", ErrImgNotFound)
 	}
-	cachePath := filepath.Join(CacheDir, imgPath)
+
 	//c.usageMap[imgPath].timesUsed += 1
 	//c.usageMap[imgPath].lastUsed = time.Now()
 	return cachePath, nil
 }
 
-func (c *CacheManager) LoadNGetImg(imgPath string) ([]byte, error) {
-	origImgPath := filepath.Join(OriginalsDir, imgPath)
+func (c *CacheManager) LoadNGetImg(imgName string) ([]byte, error) {
+	origImgPath, err := GetOrigPath(imgName)
 
-	res, err, _ := c.requestGroup.Do(imgPath, func() (interface{}, error) {
+	if err != nil {
+		return nil, err
+	}
+	res, err, _ := c.requestGroup.Do(origImgPath, func() (interface{}, error) {
 		return c.loadImg(origImgPath)
 	})
 
@@ -83,7 +83,7 @@ func (c *CacheManager) LoadNGetImg(imgPath string) ([]byte, error) {
 		return nil, fmt.Errorf("internal error: singleflight returned unexpected type: %T", res)
 	}
 
-	cacheImgPath := filepath.Join(CacheDir, imgPath)
+	cacheImgPath := filepath.Join(CacheDir, imgName)
 	c.lc.LazyWrite(imgBytes, cacheImgPath)
 	return imgBytes, nil
 }
@@ -110,18 +110,6 @@ func (c *CacheManager) loadImg(origImgPath string) ([]byte, error) {
 	return newImage, nil
 }
 
-func (c *CacheManager) ConfirmAddCache(cacheImgPath string) {
-	c.fastSearchMU.Lock()
-	defer c.fastSearchMU.Unlock()
-	c.fastSearch[cacheImgPath] = true
-}
-
-func (c *CacheManager) ConfirmRemoveCache(cacheImgPath string) {
-	c.fastSearchMU.Lock()
-	defer c.fastSearchMU.Unlock()
-	c.fastSearch[cacheImgPath] = false
-}
-
 func (c *CacheManager) AddSize(n int64) {
 	c.size.Add(n)
 	if c.GetSize() > highMark {
@@ -142,10 +130,9 @@ func InitCache(ctxP context.Context, fmu *CacheTable) *CacheManager {
 	startStop := make(chan struct{}, 1)
 	ctx, cancel := context.WithCancel(ctxP)
 	cm := &CacheManager{
-		fastSearch: make(map[string]bool),
-		cap:        initCap,
-		cleanReq:   cleanChan,
-		fmu:        fmu}
+		cap:      initCap,
+		cleanReq: cleanChan,
+		fmu:      fmu}
 	ce := &cacheEvictor{
 		ctx:       ctx,
 		cleanReq:  cleanChan,
@@ -184,7 +171,7 @@ func InitPaths(basePath string) {
 	}
 
 	OriginalsDir = filepath.Join(basePath, "assets", "uploads")
-	CacheDir = filepath.Join(basePath, "assets", "image_cache")
+	CacheDir = filepath.Join(basePath, "assets", "cache")
 }
 
 func (c *CacheManager) LockFile(path string) (err error) {
@@ -193,4 +180,17 @@ func (c *CacheManager) LockFile(path string) (err error) {
 
 func (c *CacheManager) UnlockFile(path string) {
 	c.fmu.CacheUnlockFile(path)
+}
+
+func GetOrigPath(imgName string) (string, error) {
+	ext := filepath.Ext(imgName)
+	onlyName := strings.Trim(imgName, ext)
+	name64, err := strconv.ParseUint(onlyName, 10, 64)
+	if err != nil {
+		return "", fmt.Errorf("unsupported file name: %v", err)
+	}
+	subdir64 := name64 % assets.NumDirs
+	subdir := strconv.FormatUint(subdir64, 10)
+	fmt.Println(filepath.Join(OriginalsDir, subdir, imgName))
+	return filepath.Join(OriginalsDir, subdir, imgName), nil
 }

@@ -23,8 +23,6 @@ type cacheManager interface {
 	AddSize(n int64)
 	GetSize() int64
 	GetCap() int64
-	ConfirmAddCache(origImgPath string)
-	ConfirmRemoveCache(origImgPath string)
 }
 
 type restartInfo struct {
@@ -42,8 +40,8 @@ type WriteBehind struct {
 	errChan     chan error
 }
 
-func (wb *WriteBehind) LazyWrite(imgBytes []byte, imgCachePath string) {
-	go wb.lazyWrite(imgBytes, imgCachePath, 0)
+func (wb *WriteBehind) LazyWrite(imgBytes []byte, dst string) {
+	go wb.lazyWrite(imgBytes, dst, 0)
 }
 
 func (wb *WriteBehind) lazyWrite(imgBytes []byte, imgCachePath string, retryCount int) {
@@ -60,7 +58,7 @@ func (wb *WriteBehind) lazyWrite(imgBytes []byte, imgCachePath string, retryCoun
 	}
 	wb.cm.AddSize(imgSize)
 	tmpPath := imgCachePath + ".tmp"
-	err := os.WriteFile(tmpPath, imgBytes, 0644)
+	err := wb.fmu.WriteFile(tmpPath, imgBytes)
 	if err != nil {
 		wb.restartChan <- ri
 		wb.cm.AddSize(-imgSize)
@@ -71,13 +69,12 @@ func (wb *WriteBehind) lazyWrite(imgBytes []byte, imgCachePath string, retryCoun
 	if err != nil {
 		wb.cm.AddSize(-imgSize)
 		wb.errChan <- fmt.Errorf("%s %w", tmpPath, ErrTmpRename)
-		err = os.Remove(tmpPath)
+		err = wb.fmu.Remove(tmpPath)
 		if err != nil {
 			wb.errChan <- fmt.Errorf("%s %w", tmpPath, ErrTmpRename)
 		}
 		return
 	}
-	wb.cm.ConfirmAddCache(imgCachePath)
 	wb.fmu.AddFileState(imgCachePath, 0)
 }
 
