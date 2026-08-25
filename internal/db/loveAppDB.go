@@ -146,9 +146,9 @@ func initAndPopulateDB(dbPath string) error {
 	errChan := make(chan error)
 	go assets.PopulateDB(data, errChan)
 	for item := range data {
-		_, err = stmt.Exec(item.UserID, item.Path, item.Date)
+		_, err = stmt.Exec(item.UserID, item.Name, item.Date)
 		if err != nil {
-			log.Printf("Предупреждение: не удалось добавить файл %s в БД: %v", item.Path, err)
+			log.Printf("Предупреждение: не удалось добавить файл %s в БД: %v", item.Name, err)
 		}
 	}
 	return <-errChan

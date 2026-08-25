@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"strings"
 )
 
 type HandlerManager struct {
@@ -21,12 +22,8 @@ type ManifestReq struct {
 	UserID int `json:"UserID"`
 }
 
-type imgReq struct {
-	Path string `json:"path"`
-}
-
 func StartReqHandling(srv *http.Server, h *HandlerManager) {
-	http.HandleFunc("/api/image", h.imgHandler)
+	http.HandleFunc("/api/image/", h.imgHandler)
 	http.HandleFunc("/api/manifest", h.manifestHandler)
 
 	fmt.Println("Server started and listening to 8080...")
@@ -42,35 +39,36 @@ func startListening(srv *http.Server) {
 }
 
 func (h *HandlerManager) imgHandler(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Content-Type", "application/json")
 	w.Header().Set("Access-Control-Allow-Origin", "*")
 
-	var req imgReq
+	imgName := strings.TrimPrefix(r.URL.Path, "/api/image/")
 
-	err := json.NewDecoder(r.Body).Decode(&req)
-	if err != nil {
-		http.Error(w, "wrong JSON format", http.StatusBadRequest)
+	if imgName == "" {
+		http.Error(w, "missing image path", http.StatusBadRequest)
 		return
 	}
+
 	defer r.Body.Close()
 
-	cacheImgPath, err := h.cm.GetImg(req.Path)
+	cacheImgPath, err := h.cm.GetImg(imgName)
 	if err == nil {
-		err = h.cm.LockFile(req.Path)
+		err = h.cm.LockFile(cacheImgPath)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
+		h.cm.UnlockFile(cacheImgPath)
 		http.ServeFile(w, r, cacheImgPath)
-		h.cm.UnlockFile(req.Path)
 		return
 	}
 
-	imgBytes, err := h.cm.LoadNGetImg(req.Path)
+	imgBytes, err := h.cm.LoadNGetImg(imgName)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
+
+	w.Header().Set("Content-Type", http.DetectContentType(imgBytes))
 	_, err = w.Write(imgBytes)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)

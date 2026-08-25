@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io/fs"
 	"log"
+	"path/filepath"
 	"strconv"
 
 	_ "github.com/mattn/go-sqlite3"
@@ -16,7 +17,7 @@ var assetsFS embed.FS
 
 type RowData struct {
 	UserID int
-	Path   string
+	Name   string
 	Date   int
 }
 
@@ -42,8 +43,9 @@ func PopulateDB(data chan<- RowData, errChan chan<- error) {
 			log.Printf("Предупреждение: не удалось получить EXIF дату для %s: %v. В базу будет записан 0.", path, extractErr)
 			dateInt = 0
 		}
+		base := filepath.Base(path)
 
-		data <- RowData{UserID: userID, Path: path, Date: dateInt}
+		data <- RowData{UserID: userID, Name: base, Date: dateInt}
 
 		return nil
 	})

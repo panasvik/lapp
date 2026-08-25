@@ -12,7 +12,7 @@ import (
 )
 
 const (
-	numDirs = 32
+	NumDirs = 32
 )
 
 //
@@ -62,7 +62,7 @@ func sort(ctx context.Context, root string) {
 
 func createDirs(root string) bool {
 	flag := true
-	for i := range numDirs {
+	for i := range NumDirs {
 		path := filepath.Join(root, strconv.Itoa(i))
 		err := os.Mkdir(path, 0664)
 		if err != nil {
@@ -118,7 +118,7 @@ func copyContent(path string) error {
 	if err != nil {
 		return fmt.Errorf("unable to turn %s to int: %w", onlyName, err)
 	}
-	subDir := int(name64 % numDirs)
+	subDir := int(name64 % NumDirs)
 	newPath := filepath.Join(dir, strconv.Itoa(subDir), name)
 	srcFile, err := os.Open(path)
 	defer srcFile.Close()
