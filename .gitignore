@@ -35,3 +35,6 @@ Dockerfile
 Dockerfile.debug
 /cmd/app/DBBuilder.exe
 /assets/cache/
+loveapp.db
+app.log
+main.exe
