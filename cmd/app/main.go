@@ -5,6 +5,7 @@ import (
 	"ImageCacheProject/internal/db"
 	"ImageCacheProject/internal/env"
 	"ImageCacheProject/internal/request"
+	"ImageCacheProject/internal/upload"
 	"bufio"
 	"context"
 	"flag"
@@ -52,8 +53,9 @@ func main() {
 		panic(err)
 	}
 	cacheManager.StartBGProcesses()
+	uploadManager := upload.NewManager(fmu)
 
-	handler := request.NewHandler(ctx, ldb, cacheManager, fmu)
+	handler := request.NewHandler(ctx, ldb, cacheManager, uploadManager)
 	srv := &http.Server{
 		Addr: ":8080",
 	}

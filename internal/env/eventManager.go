@@ -12,21 +12,21 @@ type observer interface {
 }
 
 type EventManager struct {
-	subs map[string][]observer
+	obss map[string][]observer
 }
 
-func (e *EventManager) Attach(sub observer, envName string) {
-	envSubs := e.subs[envName]
-	envSubs = append(envSubs, sub)
+func (e *EventManager) Attach(obs observer, envName string) {
+	envSubs := e.obss[envName]
+	envSubs = append(envSubs, obs)
 }
 
-func (e *EventManager) Detach(sub observer, envName string) {
-	envSubs, exists := e.subs[envName]
+func (e *EventManager) Detach(obs observer, envName string) {
+	envSubs, exists := e.obss[envName]
 	if !exists {
 		return
 	}
 
-	idx := slices.Index(envSubs, sub)
+	idx := slices.Index(envSubs, obs)
 	if idx == -1 {
 		return
 	}
@@ -45,13 +45,13 @@ func (e *EventManager) SetEnv(envName string, envVal string) error {
 }
 
 func (e *EventManager) sendEvent(envName string, envVal string) {
-	envSubs, exists := e.subs[envName]
+	envSubs, exists := e.obss[envName]
 	if !exists {
 		return
 	}
 
-	for _, sub := range envSubs {
-		sub.UpdateEnv(envName, envVal)
+	for _, obs := range envSubs {
+		obs.UpdateEnv(envName, envVal)
 	}
 }
 

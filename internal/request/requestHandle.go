@@ -3,6 +3,7 @@ package request
 import (
 	"ImageCacheProject/internal/caching"
 	"ImageCacheProject/internal/db"
+	"ImageCacheProject/internal/upload"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -14,7 +15,7 @@ type HandlerManager struct {
 	ctx context.Context
 	ldb *db.LoveAppDB
 	cm  *caching.CacheManager
-	fmu *caching.CacheTable
+	um  *upload.Manager
 }
 
 type ManifestReq struct {
@@ -25,6 +26,7 @@ type ManifestReq struct {
 func StartReqHandling(srv *http.Server, h *HandlerManager) {
 	http.HandleFunc("/api/image/", h.imgHandler)
 	http.HandleFunc("/api/manifest", h.manifestHandler)
+	http.HandleFunc("/api/upload/images", h.uploadHandler)
 
 	fmt.Println("Server started and listening to 8080...")
 
@@ -100,7 +102,26 @@ func (h *HandlerManager) manifestHandler(w http.ResponseWriter, r *http.Request)
 	w.WriteHeader(http.StatusOK)
 }
 
-func NewHandler(ctx context.Context, ldb *db.LoveAppDB, cm *caching.CacheManager, fmu *caching.CacheTable) *HandlerManager {
+func (h *HandlerManager) uploadHandler(w http.ResponseWriter, r *http.Request) {
+	file, header, err := r.FormFile("image")
+	if err != nil {
+		http.Error(w, "unable to get file", http.StatusBadRequest)
+		return
+	}
+	defer file.Close()
+	err = h.um.SaveUploadedFile(header.Filename, file)
+	if err != nil {
+		http.Error(w, "Error saving file", http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+
+	response := []string{"/uploads/" + header.Filename}
+	json.NewEncoder(w).Encode(response)
+}
+
+func NewHandler(ctx context.Context, ldb *db.LoveAppDB, cm *caching.CacheManager, um *upload.Manager) *HandlerManager {
 	return &HandlerManager{
-		ctx, ldb, cm, fmu}
+		ctx, ldb, cm, um}
 }

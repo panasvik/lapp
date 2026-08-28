@@ -16,13 +16,13 @@ const (
 )
 
 type cacheEvictor struct {
-	paths
+	Paths
 	ctx       context.Context
 	cleanReq  <-chan struct{}
 	startStop chan<- struct{}
 	cm        cacheManager
 	cancel    context.CancelFunc
-	fmu       *CacheTable
+	fmu       *FileMutex
 	envEM     *env.EventManager
 }
 
@@ -94,15 +94,4 @@ func (ce *cacheEvictor) CleanAll() {
 func (ce *cacheEvictor) Stop() {
 	ce.cancel()
 	close(ce.startStop)
-}
-
-func (ce *cacheEvictor) UpdateEnv(key string, val string) {
-	switch key {
-	case "CACHE_DIR":
-		ce.CacheDir = val
-	case "UPLOADS_DIR":
-		ce.OriginalsDir = val
-	default:
-
-	}
 }

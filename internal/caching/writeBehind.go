@@ -34,7 +34,7 @@ type restartInfo struct {
 type WriteBehind struct {
 	ctx         context.Context
 	restartChan chan *restartInfo
-	fmu         *CacheTable
+	fmu         *FileMutex
 	cm          cacheManager
 	cancel      context.CancelFunc
 	errChan     chan error

@@ -14,7 +14,7 @@ import (
 	"golang.org/x/sync/singleflight"
 )
 
-type paths struct {
+type Paths struct {
 	OriginalsDir string
 	CacheDir     string
 }
@@ -43,13 +43,13 @@ type cacheCleaner interface {
 
 type CacheManager struct {
 	//usageMap   map[string]*usage
-	paths
+	Paths
 	cap          int64
 	size         atomic.Int64
 	cc           cacheCleaner
 	lc           lazyCacher
 	cleanReq     chan<- struct{}
-	fmu          *CacheTable
+	fmu          *FileMutex
 	requestGroup singleflight.Group
 	envEM        *env.EventManager
 }
@@ -127,17 +127,19 @@ func (c *CacheManager) GetCap() int64 {
 	return c.cap
 }
 
-func InitCache(ctxP context.Context, fmu *CacheTable, envEM *env.EventManager) *CacheManager {
+func InitCache(ctxP context.Context, fmu *FileMutex, envEM *env.EventManager) *CacheManager {
 	cleanChan := make(chan struct{}, 1)
 	startStop := make(chan struct{}, 1)
 
 	ctx, cancel := context.WithCancel(ctxP)
 	cm := &CacheManager{
+		Paths:    Paths{"", ""},
 		cap:      initCap,
 		cleanReq: cleanChan,
 		fmu:      fmu,
 		envEM:    envEM}
 	ce := &cacheEvictor{
+		Paths:     Paths{"", ""},
 		ctx:       ctx,
 		cleanReq:  cleanChan,
 		cancel:    cancel,
@@ -175,12 +177,12 @@ func (c *CacheManager) Close() {
 	c.cc.Stop()
 }
 
-func (c *CacheManager) UpdateEnv(key string, val string) {
+func (p *Paths) UpdateEnv(key string, val string) {
 	switch key {
 	case "CACHE_DIR":
-		c.CacheDir = val
+		p.CacheDir = val
 	case "UPLOADS_DIR":
-		c.OriginalsDir = val
+		p.OriginalsDir = val
 	default:
 	}
 }
