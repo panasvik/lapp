@@ -1,6 +1,7 @@
 package caching
 
 import (
+	"ImageCacheProject/internal/env"
 	"context"
 	"log"
 	"os"
@@ -15,12 +16,14 @@ const (
 )
 
 type cacheEvictor struct {
+	paths
 	ctx       context.Context
 	cleanReq  <-chan struct{}
 	startStop chan<- struct{}
 	cm        cacheManager
 	cancel    context.CancelFunc
 	fmu       *CacheTable
+	envEM     *env.EventManager
 }
 
 func (ce *cacheEvictor) Start() {
@@ -47,7 +50,7 @@ func (ce *cacheEvictor) clean(cutoffTime time.Time) {
 	case <-ce.ctx.Done():
 		return
 	default:
-		err := filepath.WalkDir(CacheDir, func(path string, d os.DirEntry, err error) error {
+		err := filepath.WalkDir(ce.CacheDir, func(path string, d os.DirEntry, err error) error {
 			return ce.eval(cutoffTime, path, d, err)
 		})
 		if err != nil {
@@ -91,4 +94,15 @@ func (ce *cacheEvictor) CleanAll() {
 func (ce *cacheEvictor) Stop() {
 	ce.cancel()
 	close(ce.startStop)
+}
+
+func (ce *cacheEvictor) UpdateEnv(key string, val string) {
+	switch key {
+	case "CACHE_DIR":
+		ce.CacheDir = val
+	case "UPLOADS_DIR":
+		ce.OriginalsDir = val
+	default:
+
+	}
 }

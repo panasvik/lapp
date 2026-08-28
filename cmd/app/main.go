@@ -3,6 +3,7 @@ package main
 import (
 	"ImageCacheProject/internal/caching"
 	"ImageCacheProject/internal/db"
+	"ImageCacheProject/internal/env"
 	"ImageCacheProject/internal/request"
 	"bufio"
 	"context"
@@ -20,16 +21,17 @@ import (
 func main() {
 	coldBoot := flag.Bool("coldboot", false, "start DB")
 	flag.Parse()
-
 	if *coldBoot {
 		db.ColdBoot()
 	}
 
 	setUpLogger()
+
 	ctx, cancel := context.WithTimeout(context.Background(), time.Hour)
 	scanner := bufio.NewScanner(os.Stdin)
 	cancelChan := make(chan struct{})
 	go readInput(cancelChan, scanner)
+
 	ldb, err := db.Connect()
 	if err != nil {
 		fmt.Print("main: ", err.Error())
@@ -41,9 +43,15 @@ func main() {
 			fmt.Print("main: ", err.Error())
 		}
 	}()
+
+	eem := env.NewEventManager()
 	fmu := caching.NewTable()
-	caching.InitPaths(".")
-	cacheManager := caching.InitCache(ctx, fmu)
+	cacheManager := caching.InitCache(ctx, fmu, eem)
+	err = eem.InitPaths(".")
+	if err != nil {
+		panic(err)
+	}
+	cacheManager.StartBGProcesses()
 
 	handler := request.NewHandler(ctx, ldb, cacheManager, fmu)
 	srv := &http.Server{
@@ -61,6 +69,7 @@ func main() {
 
 	}
 	cancel()
+	cacheManager.Close()
 	StopServer(srv)
 }
 

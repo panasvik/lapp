@@ -2,9 +2,9 @@ package caching
 
 import (
 	"ImageCacheProject/assets"
+	"ImageCacheProject/internal/env"
 	"context"
 	"fmt"
-	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -14,10 +14,10 @@ import (
 	"golang.org/x/sync/singleflight"
 )
 
-var (
+type paths struct {
 	OriginalsDir string
 	CacheDir     string
-)
+}
 
 const (
 	megabyte = 1024 * 1024
@@ -25,7 +25,7 @@ const (
 )
 
 type lazyCacher interface {
-	Start(startStop <-chan struct{})
+	Start()
 	LazyWrite(imgBytes []byte, dst string)
 	Stop()
 }
@@ -43,6 +43,7 @@ type cacheCleaner interface {
 
 type CacheManager struct {
 	//usageMap   map[string]*usage
+	paths
 	cap          int64
 	size         atomic.Int64
 	cc           cacheCleaner
@@ -50,10 +51,11 @@ type CacheManager struct {
 	cleanReq     chan<- struct{}
 	fmu          *CacheTable
 	requestGroup singleflight.Group
+	envEM        *env.EventManager
 }
 
 func (c *CacheManager) GetImg(imgName string) (string, error) {
-	cachePath := filepath.Join(CacheDir, imgName)
+	cachePath := filepath.Join(c.CacheDir, imgName)
 
 	if !c.fmu.Exists(cachePath) {
 		return "", fmt.Errorf("cache: %w", ErrImgNotFound)
@@ -65,12 +67,12 @@ func (c *CacheManager) GetImg(imgName string) (string, error) {
 }
 
 func (c *CacheManager) LoadNGetImg(imgName string) ([]byte, error) {
-	origImgPath, err := GetOrigPath(imgName)
+	origImgPath, err := c.GetOrigPath(imgName)
 
 	if err != nil {
 		return nil, err
 	}
-	res, err, _ := c.requestGroup.Do(origImgPath, func() (interface{}, error) {
+	res, err, _ := c.requestGroup.Do(origImgPath, func() (any, error) {
 		return c.loadImg(origImgPath)
 	})
 
@@ -83,7 +85,7 @@ func (c *CacheManager) LoadNGetImg(imgName string) ([]byte, error) {
 		return nil, fmt.Errorf("internal error: singleflight returned unexpected type: %T", res)
 	}
 
-	cacheImgPath := filepath.Join(CacheDir, imgName)
+	cacheImgPath := filepath.Join(c.CacheDir, imgName)
 	c.lc.LazyWrite(imgBytes, cacheImgPath)
 	return imgBytes, nil
 }
@@ -125,34 +127,46 @@ func (c *CacheManager) GetCap() int64 {
 	return c.cap
 }
 
-func InitCache(ctxP context.Context, fmu *CacheTable) *CacheManager {
+func InitCache(ctxP context.Context, fmu *CacheTable, envEM *env.EventManager) *CacheManager {
 	cleanChan := make(chan struct{}, 1)
 	startStop := make(chan struct{}, 1)
+
 	ctx, cancel := context.WithCancel(ctxP)
 	cm := &CacheManager{
 		cap:      initCap,
 		cleanReq: cleanChan,
-		fmu:      fmu}
+		fmu:      fmu,
+		envEM:    envEM}
 	ce := &cacheEvictor{
 		ctx:       ctx,
 		cleanReq:  cleanChan,
 		cancel:    cancel,
 		fmu:       fmu,
 		startStop: startStop,
-		cm:        cm}
+		cm:        cm,
+		envEM:     envEM}
+
 	wb := &WriteBehind{
 		ctx:         ctx,
 		restartChan: make(chan *restartInfo, 10),
 		cancel:      cancel,
 		errChan:     make(chan error, 10),
+		startStop:   startStop,
 		fmu:         fmu,
 		cm:          cm}
 	cm.cc = ce
 	cm.lc = wb
-	cm.cc.CleanAll()
-	cm.cc.Start()
-	cm.lc.Start(startStop)
+	envEM.Attach(cm, "CACHE_DIR")
+	envEM.Attach(ce, "CACHE_DIR")
+	envEM.Attach(cm, "UPLOADS_DIR")
+	envEM.Attach(ce, "UPLOADS_DIR")
 	return cm
+}
+
+func (c *CacheManager) StartBGProcesses() {
+	c.cc.CleanAll()
+	c.cc.Start()
+	c.lc.Start()
 }
 
 func (c *CacheManager) Close() {
@@ -161,17 +175,14 @@ func (c *CacheManager) Close() {
 	c.cc.Stop()
 }
 
-func InitPaths(basePath string) {
-	if basePath == "" {
-		var err error
-		basePath, err = os.Getwd()
-		if err != nil {
-			panic(err)
-		}
+func (c *CacheManager) UpdateEnv(key string, val string) {
+	switch key {
+	case "CACHE_DIR":
+		c.CacheDir = val
+	case "UPLOADS_DIR":
+		c.OriginalsDir = val
+	default:
 	}
-
-	OriginalsDir = filepath.Join(basePath, "assets", "uploads")
-	CacheDir = filepath.Join(basePath, "assets", "cache")
 }
 
 func (c *CacheManager) LockFile(path string) (err error) {
@@ -182,7 +193,7 @@ func (c *CacheManager) UnlockFile(path string) {
 	c.fmu.CacheUnlockFile(path)
 }
 
-func GetOrigPath(imgName string) (string, error) {
+func (c *CacheManager) GetOrigPath(imgName string) (string, error) {
 	ext := filepath.Ext(imgName)
 	onlyName := strings.Trim(imgName, ext)
 	name64, err := strconv.ParseUint(onlyName, 10, 64)
@@ -191,6 +202,5 @@ func GetOrigPath(imgName string) (string, error) {
 	}
 	subdir64 := name64 % assets.NumDirs
 	subdir := strconv.FormatUint(subdir64, 10)
-	fmt.Println(filepath.Join(OriginalsDir, subdir, imgName))
-	return filepath.Join(OriginalsDir, subdir, imgName), nil
+	return filepath.Join(c.OriginalsDir, subdir, imgName), nil
 }

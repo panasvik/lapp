@@ -38,6 +38,7 @@ type WriteBehind struct {
 	cm          cacheManager
 	cancel      context.CancelFunc
 	errChan     chan error
+	startStop   <-chan struct{}
 }
 
 func (wb *WriteBehind) LazyWrite(imgBytes []byte, dst string) {
@@ -78,7 +79,7 @@ func (wb *WriteBehind) lazyWrite(imgBytes []byte, imgCachePath string, retryCoun
 	wb.fmu.AddFileState(imgCachePath, 0)
 }
 
-func (wb *WriteBehind) restarter(startStop <-chan struct{}) {
+func (wb *WriteBehind) restarter() {
 	for ri := range wb.restartChan {
 		select {
 		case <-wb.ctx.Done():
@@ -91,7 +92,7 @@ func (wb *WriteBehind) restarter(startStop <-chan struct{}) {
 			nextSize := imgSize + wb.cm.GetSize()
 			if nextSize > highMark {
 				select {
-				case <-startStop:
+				case <-wb.startStop:
 				case <-time.After(MaxWaitTime):
 					continue
 				}
@@ -106,8 +107,8 @@ func (wb *WriteBehind) restarter(startStop <-chan struct{}) {
 	}
 }
 
-func (wb *WriteBehind) Start(startStop <-chan struct{}) {
-	go wb.restarter(startStop)
+func (wb *WriteBehind) Start() {
+	go wb.restarter()
 	go wb.ErrLogger()
 
 }
