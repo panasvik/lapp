@@ -32,6 +32,7 @@ type restartInfo struct {
 }
 
 type WriteBehind struct {
+	Paths
 	ctx         context.Context
 	restartChan chan *restartInfo
 	fmu         *FileMutex
@@ -58,21 +59,37 @@ func (wb *WriteBehind) lazyWrite(imgBytes []byte, imgCachePath string, retryCoun
 		return
 	}
 	wb.cm.AddSize(imgSize)
-	tmpPath := imgCachePath + ".tmp"
-	err := wb.fmu.WriteFile(tmpPath, imgBytes)
+	tmpFile, err := os.CreateTemp(wb.CacheDir, "cached-*.tmp")
 	if err != nil {
 		wb.restartChan <- ri
 		wb.cm.AddSize(-imgSize)
-		wb.errChan <- fmt.Errorf("%s %w", tmpPath, ErrTmpWrite)
+		wb.errChan <- fmt.Errorf("%s %w", "error creating .tmp file: ", ErrTmpWrite)
 		return
 	}
-	err = os.Rename(tmpPath, imgCachePath)
+	tmpName := tmpFile.Name()
+
+	defer func() {
+		tmpFile.Close()
+		if err != nil {
+			os.Remove(tmpName)
+		}
+	}()
+
+	err = wb.fmu.WriteFile(tmpName, imgBytes)
+	if err != nil {
+		wb.restartChan <- ri
+		wb.cm.AddSize(-imgSize)
+		wb.errChan <- fmt.Errorf("%s %w", tmpName, ErrTmpWrite)
+		return
+	}
+
+	err = os.Rename(tmpName, imgCachePath)
 	if err != nil {
 		wb.cm.AddSize(-imgSize)
-		wb.errChan <- fmt.Errorf("%s %w", tmpPath, ErrTmpRename)
-		err = wb.fmu.Remove(tmpPath)
+		wb.errChan <- fmt.Errorf("%s %w", tmpName, ErrTmpRename)
+		err = wb.fmu.Remove(tmpName)
 		if err != nil {
-			wb.errChan <- fmt.Errorf("%s %w", tmpPath, ErrTmpRename)
+			wb.errChan <- fmt.Errorf("%s %w", tmpName, ErrTmpRename)
 		}
 		return
 	}
