@@ -5,6 +5,7 @@ import (
 	"ImageCacheProject/internal/env"
 	"context"
 	"fmt"
+	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -21,7 +22,7 @@ type Paths struct {
 
 const (
 	megabyte = 1024 * 1024
-	initCap  = 4 * 1024 * megabyte
+	initCap  = 1 * 1024 * megabyte
 )
 
 type lazyCacher interface {
@@ -34,6 +35,7 @@ type cacheCleaner interface {
 	Start()
 	CleanAll()
 	Stop()
+	UpdateEnv(key string, val string)
 }
 
 //type usage struct {
@@ -127,7 +129,7 @@ func (c *CacheManager) GetCap() int64 {
 	return c.cap
 }
 
-func InitCache(ctxP context.Context, fmu *FileMutex, envEM *env.EventManager) *CacheManager {
+func InitCache(ctxP context.Context, fmu *FileMutex) *CacheManager {
 	cleanChan := make(chan struct{}, 1)
 	startStop := make(chan struct{}, 1)
 
@@ -136,8 +138,7 @@ func InitCache(ctxP context.Context, fmu *FileMutex, envEM *env.EventManager) *C
 		Paths:    Paths{"", ""},
 		cap:      initCap,
 		cleanReq: cleanChan,
-		fmu:      fmu,
-		envEM:    envEM}
+		fmu:      fmu}
 	ce := &cacheEvictor{
 		Paths:     Paths{"", ""},
 		ctx:       ctx,
@@ -145,8 +146,7 @@ func InitCache(ctxP context.Context, fmu *FileMutex, envEM *env.EventManager) *C
 		cancel:    cancel,
 		fmu:       fmu,
 		startStop: startStop,
-		cm:        cm,
-		envEM:     envEM}
+		cm:        cm}
 
 	wb := &WriteBehind{
 		ctx:         ctx,
@@ -158,14 +158,12 @@ func InitCache(ctxP context.Context, fmu *FileMutex, envEM *env.EventManager) *C
 		cm:          cm}
 	cm.cc = ce
 	cm.lc = wb
-	envEM.Attach(cm, "CACHE_DIR")
-	envEM.Attach(ce, "CACHE_DIR")
-	envEM.Attach(cm, "UPLOADS_DIR")
-	envEM.Attach(ce, "UPLOADS_DIR")
 	return cm
 }
 
 func (c *CacheManager) StartBGProcesses() {
+	c.size.Add(c.populateFmu())
+
 	c.cc.CleanAll()
 	c.cc.Start()
 	c.lc.Start()
@@ -175,6 +173,11 @@ func (c *CacheManager) Close() {
 	c.lc.Stop()
 	c.cc.CleanAll()
 	c.cc.Stop()
+}
+
+func (c *CacheManager) UpdateEnv(key string, val string) {
+	c.Paths.UpdateEnv(key, val)
+	c.cc.UpdateEnv(key, val)
 }
 
 func (p *Paths) UpdateEnv(key string, val string) {
@@ -205,4 +208,27 @@ func (c *CacheManager) GetOrigPath(imgName string) (string, error) {
 	subdir64 := name64 % assets.NumDirs
 	subdir := strconv.FormatUint(subdir64, 10)
 	return filepath.Join(c.OriginalsDir, subdir, imgName), nil
+}
+
+func (c *CacheManager) populateFmu() int64 {
+	size := int64(0)
+	err := filepath.WalkDir(c.CacheDir, func(path string, d os.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if d.IsDir() {
+			return nil
+		}
+		info, err := d.Info()
+		if err != nil {
+			return err
+		}
+		c.fmu.AddFileState(path, 0)
+		size += info.Size()
+		return nil
+	})
+	if err != nil {
+		return -1
+	}
+	return size
 }

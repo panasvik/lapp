@@ -38,19 +38,22 @@ func (ce *cacheEvictor) runCleanUpWorker() {
 		case <-ce.cleanReq:
 			{
 				cutoffTime := time.Now().Add(-MaxAge)
-				ce.clean(cutoffTime)
+				ce.clean(cutoffTime, lowMark)
 				ce.startStop <- struct{}{}
 			}
 		}
 	}
 }
 
-func (ce *cacheEvictor) clean(cutoffTime time.Time) {
+func (ce *cacheEvictor) clean(cutoffTime time.Time, low int64) {
 	select {
 	case <-ce.ctx.Done():
 		return
 	default:
 		err := filepath.WalkDir(ce.CacheDir, func(path string, d os.DirEntry, err error) error {
+			if ce.cm.GetSize() < low {
+				return filepath.SkipAll
+			}
 			return ce.eval(cutoffTime, path, d, err)
 		})
 		if err != nil {
@@ -61,9 +64,6 @@ func (ce *cacheEvictor) clean(cutoffTime time.Time) {
 }
 
 func (ce *cacheEvictor) eval(cutoffTime time.Time, path string, d os.DirEntry, err error) error {
-	if ce.cm.GetSize() < lowMark {
-		return filepath.SkipAll
-	}
 	if err != nil {
 		return err
 	}
@@ -88,7 +88,7 @@ func (ce *cacheEvictor) eval(cutoffTime time.Time, path string, d os.DirEntry, e
 }
 
 func (ce *cacheEvictor) CleanAll() {
-	ce.clean(time.Now())
+	ce.clean(time.Now(), 0)
 }
 
 func (ce *cacheEvictor) Stop() {
