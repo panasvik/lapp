@@ -12,21 +12,22 @@ var (
 	ErrImgNotFound = errors.New("img not found")
 )
 
-type fileState struct {
-	readers  int  // количество текущих горутин-читателей
-	toDelete bool // флаг, что файл заказан на удаление
+type FileEntry struct {
+	rwMu     sync.RWMutex
+	toDelete bool
+	refCount int
 }
 
 // FileMutex TODO: implement states into writeBehind, cacheCleaner, workers DONE
 type FileMutex struct {
 	mu            sync.Mutex
-	items         map[string]fileState
+	items         map[string]*FileEntry
 	diskSemaphore chan struct{}
 }
 
 func NewTable() *FileMutex {
 	return &FileMutex{
-		items:         make(map[string]fileState),
+		items:         make(map[string]*FileEntry),
 		diskSemaphore: make(chan struct{}, 10),
 	}
 }
@@ -34,33 +35,29 @@ func NewTable() *FileMutex {
 func (fm *FileMutex) AddFileState(path string, numReaders int) {
 	fm.mu.Lock()
 	defer fm.mu.Unlock()
-	fs := fileState{numReaders, false}
-	fm.items[path] = fs
+	fe := &FileEntry{refCount: numReaders, toDelete: false}
+	fm.items[path] = fe
 }
 
 func (fm *FileMutex) CacheLockFile(path string) error {
 	fm.mu.Lock()
 	defer fm.mu.Unlock()
-
-	state, exists := fm.items[path]
-
-	if !exists || state.toDelete {
+	entry, exists := fm.items[path]
+	if !exists || entry.toDelete {
 		return errors.New("file not found or being deleted")
 	}
 	fm.diskSemaphore <- struct{}{}
-	state.readers++
-	fm.items[path] = state
+	entry.refCount++
 	return nil
 }
 
 func (fm *FileMutex) CacheUnlockFile(path string) {
 	fm.mu.Lock()
 	defer fm.mu.Unlock()
-	st := fm.items[path]
-	st.readers--
-	fm.items[path] = st
+	entry := fm.items[path]
+	entry.refCount--
 
-	needDelete := st.toDelete && st.readers == 0
+	needDelete := entry.toDelete && entry.refCount == 0
 
 	defer func() {
 		if needDelete {
@@ -71,38 +68,65 @@ func (fm *FileMutex) CacheUnlockFile(path string) {
 }
 
 func (fm *FileMutex) CleanUpFile(path string) error {
-	fm.diskSemaphore <- struct{}{}
-	defer func() { <-fm.diskSemaphore }()
 	fm.mu.Lock()
-	defer fm.mu.Unlock()
-	state, exists := fm.items[path]
-
-	if !exists || state.toDelete {
+	entry, exists := fm.items[path]
+	if !exists || entry.toDelete {
+		fm.mu.Unlock()
 		return nil
 	}
 
-	if state.readers == 0 {
+	entry.toDelete = true
+
+	if entry.refCount == 0 {
 		delete(fm.items, path)
+		fm.mu.Unlock()
+
+		entry.rwMu.Lock()
+		defer entry.rwMu.Unlock()
 		return os.Remove(path)
 	}
 
-	state.toDelete = true
-	fm.items[path] = state
-
+	fm.mu.Unlock()
 	return nil
 }
 
-func (fm *FileMutex) ReadCacheFile(path string) ([]byte, error) {
-	state, exists := fm.items[path]
-	if !exists {
-		return nil, fmt.Errorf("cache table: %v", ErrImgNotFound)
+func (fm *FileMutex) getEntry(path string) (*FileEntry, error) {
+	entry, exists := fm.items[path]
+	if !exists || entry.toDelete {
+		return nil, fmt.Errorf("file mutex: %v", ErrImgNotFound)
 	}
+	return entry, nil
+}
+
+func (fm *FileMutex) incrementEntry(path string) (*FileEntry, error) {
 	fm.mu.Lock()
 	defer fm.mu.Unlock()
+	entry, err := fm.getEntry(path)
+	if err != nil {
+		return nil, err
+	}
+	entry.refCount++
+	return entry, nil
+}
 
-	state.readers++
-	defer func() { fm.items[path] = state }()
-	defer func() { state.readers-- }()
+func (fm *FileMutex) ReadCacheFile(path string) ([]byte, error) {
+	entry, err := fm.incrementEntry(path)
+	if err != nil {
+		return nil, err
+	}
+
+	defer func() {
+		fm.mu.Lock()
+		entry.refCount--
+		if entry.toDelete && entry.refCount == 0 {
+			delete(fm.items, path)
+			go os.Remove(path)
+		}
+		fm.mu.Unlock()
+	}()
+	entry.rwMu.RLock()
+	defer entry.rwMu.RUnlock()
+
 	fm.diskSemaphore <- struct{}{}
 	defer func() { <-fm.diskSemaphore }()
 	return os.ReadFile(path)
