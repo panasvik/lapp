@@ -16,23 +16,23 @@ var (
 	ErrNoNames     = errors.New("No images found for user by date")
 )
 
-type LoveAppDB struct {
+type ImageDB struct {
 	*sql.DB
 	IsOpen atomic.Bool
 }
 
-func Connect() (*LoveAppDB, error) {
+func Connect() (*ImageDB, error) {
 	db, err := sql.Open("sqlite3", "loveApp.db")
 	if err != nil {
 		return nil, err
 	}
-	d := &LoveAppDB{
+	d := &ImageDB{
 		DB: db}
 	d.IsOpen.Store(true)
 	return d, nil
 }
 
-func (db *LoveAppDB) fastGetNames(targetDate int, userID int) (names []string, err error) {
+func (db *ImageDB) fastGetNames(targetDate int, userID int) (names []string, err error) {
 	query := `
 		SELECT img_path
 		FROM images
@@ -60,7 +60,7 @@ func (db *LoveAppDB) fastGetNames(targetDate int, userID int) (names []string, e
 	return names, nil
 }
 
-func (db *LoveAppDB) GetNames(targetDate int, userID int) (names []string, err error) {
+func (db *ImageDB) GetNames(targetDate int, userID int) (names []string, err error) {
 	if !db.IsOpen.Load() {
 		return nil, fmt.Errorf("DataBase is closed")
 	}

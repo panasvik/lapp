@@ -28,10 +28,7 @@ func main() {
 
 	setUpLogger()
 
-	ctx, cancel := context.WithTimeout(context.Background(), time.Hour)
-	scanner := bufio.NewScanner(os.Stdin)
-	cancelChan := make(chan struct{})
-	go readInput(cancelChan, scanner)
+	ctx, cancel, cancelChan := mainSetup()
 
 	ldb, err := db.Connect()
 	if err != nil {
@@ -47,13 +44,18 @@ func main() {
 
 	eem := env.NewEventManager()
 	fmu := caching.NewTable()
-	cacheManager := caching.InitCache(ctx, fmu, eem)
+	cacheManager := caching.InitCache(ctx, fmu)
+	eem.Attach(cacheManager, "CACHE_DIR")
+	eem.Attach(cacheManager, "UPLOADS_DIR")
+
+	uploadManager := upload.NewManager(fmu)
+	eem.Attach(uploadManager, "UPLOADS_DIR")
+
 	err = eem.InitPaths(".")
 	if err != nil {
 		panic(err)
 	}
 	cacheManager.StartBGProcesses()
-	uploadManager := upload.NewManager(fmu)
 
 	handler := request.NewHandler(ctx, ldb, cacheManager, uploadManager)
 	srv := &http.Server{
@@ -108,4 +110,12 @@ func readInput(cancelChan chan<- struct{}, scanner *bufio.Scanner) {
 			break
 		}
 	}
+}
+
+func mainSetup() (context.Context, context.CancelFunc, chan struct{}) {
+	ctx, cancel := context.WithTimeout(context.Background(), time.Hour)
+	scanner := bufio.NewScanner(os.Stdin)
+	cancelChan := make(chan struct{})
+	go readInput(cancelChan, scanner)
+	return ctx, cancel, cancelChan
 }

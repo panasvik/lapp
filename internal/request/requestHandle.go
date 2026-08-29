@@ -13,9 +13,10 @@ import (
 
 type HandlerManager struct {
 	ctx context.Context
-	ldb *db.LoveAppDB
+	ldb *db.ImageDB
 	cm  *caching.CacheManager
 	um  *upload.Manager
+	dbh *dbHandler
 }
 
 type ManifestReq struct {
@@ -109,7 +110,8 @@ func (h *HandlerManager) uploadHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	defer file.Close()
-	err = h.um.SaveUploadedFile(header.Filename, file)
+	path, err := h.um.SaveUploadedFile(header.Filename, file)
+	h.dbh.publish(path)
 	if err != nil {
 		http.Error(w, "Error saving file", http.StatusInternalServerError)
 		return
@@ -121,7 +123,9 @@ func (h *HandlerManager) uploadHandler(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(response)
 }
 
-func NewHandler(ctx context.Context, ldb *db.LoveAppDB, cm *caching.CacheManager, um *upload.Manager) *HandlerManager {
+func NewHandler(ctx context.Context, ldb *db.ImageDB, cm *caching.CacheManager, um *upload.Manager) *HandlerManager {
 	return &HandlerManager{
-		ctx, ldb, cm, um}
+		ctx, ldb, cm, um,
+		&dbHandler{}, // TODO: implement dbHandler
+	}
 }

@@ -18,6 +18,7 @@ type EventManager struct {
 func (e *EventManager) Attach(obs observer, envName string) {
 	envSubs := e.obss[envName]
 	envSubs = append(envSubs, obs)
+	e.obss[envName] = envSubs
 }
 
 func (e *EventManager) Detach(obs observer, envName string) {
