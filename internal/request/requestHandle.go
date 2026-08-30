@@ -16,7 +16,7 @@ type HandlerManager struct {
 	ldb *db.ImageDB
 	cm  *caching.CacheManager
 	um  *upload.Manager
-	dbh *dbHandler
+	dbh *DBHandler
 }
 
 type ManifestReq struct {
@@ -24,7 +24,15 @@ type ManifestReq struct {
 	UserID int `json:"UserID"`
 }
 
+func (h *HandlerManager) subscribeDB() {
+	h.dbh.InitDBHandler()
+	dbw := &Wrapper{h.ldb, make(chan struct{}, maxDBreq)}
+	h.dbh.Subscribe(imageDBTopic, dbw)
+}
+
 func StartReqHandling(srv *http.Server, h *HandlerManager) {
+	h.subscribeDB()
+
 	http.HandleFunc("/api/image/", h.imgHandler)
 	http.HandleFunc("/api/manifest", h.manifestHandler)
 	http.HandleFunc("/api/upload/images", h.uploadHandler)
@@ -111,9 +119,20 @@ func (h *HandlerManager) uploadHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	defer file.Close()
 	path, err := h.um.SaveUploadedFile(header.Filename, file)
-	h.dbh.publish(path)
 	if err != nil {
 		http.Error(w, "Error saving file", http.StatusInternalServerError)
+		return
+	}
+	img, err := getImgData(path)
+	if err != nil {
+		http.Error(w, "Error opening file", http.StatusInternalServerError)
+		return
+	}
+	userID := 0
+	ret := h.dbh.Publish(img, userID, imageDBTopic)
+	err = checkErrors(ret)
+	if err != nil {
+		http.Error(w, "Error saving to DB", http.StatusInternalServerError)
 		return
 	}
 	w.Header().Set("Content-Type", "application/json")
@@ -126,6 +145,20 @@ func (h *HandlerManager) uploadHandler(w http.ResponseWriter, r *http.Request) {
 func NewHandler(ctx context.Context, ldb *db.ImageDB, cm *caching.CacheManager, um *upload.Manager) *HandlerManager {
 	return &HandlerManager{
 		ctx, ldb, cm, um,
-		&dbHandler{}, // TODO: implement dbHandler
+		NewDBHandler(ctx),
 	}
+}
+
+func checkErrors(ret chan error) error {
+	var lastErr error
+	for err := range ret {
+		if err == nil {
+			continue
+		}
+		if lastErr != nil {
+			fmt.Println("subscriber sent an error overriding prev: %w %w", err, lastErr)
+		}
+		lastErr = err
+	}
+	return lastErr
 }

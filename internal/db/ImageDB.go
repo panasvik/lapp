@@ -16,6 +16,10 @@ var (
 	ErrNoNames     = errors.New("No images found for user by date")
 )
 
+const (
+	maxDBReq = 10
+)
+
 type ImageDB struct {
 	*sql.DB
 	IsOpen atomic.Bool
