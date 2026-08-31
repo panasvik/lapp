@@ -6,6 +6,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strconv"
 	"sync"
 	"sync/atomic"
@@ -21,12 +22,12 @@ const (
 	maxDBreq           = 10
 )
 
+type DBTopic int
+
 const (
 	userDBTopic  = DBTopic(0)
 	imageDBTopic = DBTopic(0)
 )
-
-type DBTopic int
 
 type Stringer interface {
 	toString() string
@@ -55,46 +56,46 @@ type Subscriber interface {
 }
 
 type DBHandler struct {
-	eventBus      chan event
-	q             *util.Queue[event]
-	isPipeRunning atomic.Bool
-	ctx           context.Context
-	subs          map[DBTopic][]Subscriber
-	senderLimit   chan struct{}
-}
-
-func (h *DBHandler) pushData(e event) {
-	if len(h.eventBus) == maxChanCap {
-		h.q.Push(e)
-		if h.startPipeCondition() {
-			go h.runPipe()
-		}
-	}
-	h.eventBus <- e
-}
-
-func (h *DBHandler) startPipeCondition() bool {
-	return !h.isPipeRunning.Load() && h.q.GetSize() >= startQueuePipeMark
+	inChan    chan event
+	eventBus  chan event
+	q         *util.LinkedQueue[event]
+	isRunning atomic.Bool
+	ctx       context.Context
+	subs      map[DBTopic][]Subscriber
 }
 
 func (h *DBHandler) runPipe() {
-	ctx, _ := context.WithTimeout(h.ctx, 10*time.Second)
-	h.isPipeRunning.Store(true)
-	defer h.isPipeRunning.Store(false)
+	h.isRunning.Store(true)
+	defer h.isRunning.Store(false)
+
+	var nextItem *event
+
 	for {
-		select {
-		case <-ctx.Done():
-			return
-		default:
-			for val := h.q.Pop(); val != nil; {
-				h.eventBus <- *val
+		if nextItem == nil {
+			nextItem = h.q.Pop()
+		}
+
+		if nextItem == nil {
+			select {
+			case <-h.ctx.Done():
+				return
+			case val := <-h.inChan:
+				h.q.Push(val)
+			}
+		} else {
+			select {
+			case <-h.ctx.Done():
+				return
+			case val := <-h.inChan:
+				h.q.Push(val)
+			case h.eventBus <- *nextItem:
+				nextItem = nil
 			}
 		}
 	}
-
 }
 
-func getImgData(path string) (*imgData, error) {
+func makeImgData(path string) (*imgData, error) {
 	file, err := os.Open(path)
 	if err != nil {
 		return nil, fmt.Errorf("error opening file: %w", err)
@@ -115,14 +116,15 @@ func getImgData(path string) (*imgData, error) {
 	if err != nil {
 		return nil, fmt.Errorf("error converting date: %w", err)
 	}
-	d := &imgData{path, dateInt}
+	imgName := filepath.Base(path)
+	d := &imgData{imgName, dateInt}
 	return d, err
 }
 
-// TODO: should work with userID
+// Publish TODO: should work with userID
 func (h *DBHandler) Publish(s Stringer, userID int, topic DBTopic) chan error {
 	e := convertToEvent(s, userID, topic)
-	h.pushData(e)
+	h.inChan <- e
 	return e.ret
 }
 
@@ -135,11 +137,7 @@ func (h *DBHandler) sender() {
 			if !ok {
 				return
 			}
-			h.senderLimit <- struct{}{}
-			go func() {
-				defer func() { <-h.senderLimit }()
-				h.sendToSubs(e)
-			}()
+			go h.sendToSubs(e)
 		}
 	}
 }
@@ -152,9 +150,9 @@ func (h *DBHandler) sendToSubs(e event) {
 	}
 	var wg sync.WaitGroup
 	for _, s := range topicSubs {
-		s.PushLimit()
 		wg.Add(1)
 		go func() {
+			s.PushLimit()
 			defer func() { wg.Done(); s.PullLimit() }()
 			err := s.ProcessEvent(e)
 			e.ret <- err
@@ -174,15 +172,16 @@ func (i *imgData) toString() string {
 
 func NewDBHandler(ctx context.Context) *DBHandler {
 	return &DBHandler{
-		eventBus:    make(chan event, maxChanCap),
-		q:           util.NewQueue[event](),
-		ctx:         ctx,
-		subs:        make(map[DBTopic][]Subscriber),
-		senderLimit: make(chan struct{}, maxSenders)}
+		inChan:   make(chan event, 1),
+		eventBus: make(chan event, maxChanCap),
+		q:        util.NewQueue[event](),
+		ctx:      ctx,
+		subs:     make(map[DBTopic][]Subscriber)}
 
 }
 
 func (h *DBHandler) InitDBHandler() {
+	go h.runPipe()
 	go h.sender()
 }
 
@@ -197,6 +196,7 @@ func convertToEvent(s Stringer, userID int, topic DBTopic) event {
 }
 
 type Wrapper struct {
+	// TODO: convert dataBase type to an interface for universality
 	dataBase *db.ImageDB
 	limit    chan struct{}
 }
@@ -209,7 +209,37 @@ func (w *Wrapper) PullLimit() {
 	<-w.limit
 }
 
-// TODO: implement ProcessEvent
 func (w *Wrapper) ProcessEvent(e event) error {
-	return nil
+	q := e.data.toString()
+	imgd, err := formImgData(q)
+	if err != nil {
+		return err
+	}
+	return w.dataBase.InsertData(imgd.path, e.userID, imgd.date)
+}
+
+func formImgData(s string) (imgData, error) {
+	data := make([]string, 2)
+	currWord := 0
+	isCurWordOpen := false
+	for _, c := range s {
+		if c == '{' {
+			isCurWordOpen = true
+			continue
+		} else if c == '}' {
+			currWord++
+			isCurWordOpen = false
+		}
+		if isCurWordOpen {
+			data[currWord] = data[currWord] + string(c)
+		}
+
+	}
+	path := data[0]
+	date, err := strconv.Atoi(data[1])
+	if err != nil {
+		return imgData{"", 0}, err
+	}
+
+	return imgData{path, date}, nil
 }

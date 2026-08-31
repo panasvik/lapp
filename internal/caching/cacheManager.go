@@ -1,14 +1,11 @@
 package caching
 
 import (
-	"ImageCacheProject/assets"
 	"ImageCacheProject/internal/env"
 	"context"
 	"fmt"
 	"os"
 	"path/filepath"
-	"strconv"
-	"strings"
 	"sync/atomic"
 
 	"github.com/h2non/bimg"
@@ -199,14 +196,7 @@ func (c *CacheManager) UnlockFile(path string) {
 }
 
 func (c *CacheManager) GetOrigPath(imgName string) (string, error) {
-	ext := filepath.Ext(imgName)
-	onlyName := strings.Trim(imgName, ext)
-	name64, err := strconv.ParseUint(onlyName, 10, 64)
-	if err != nil {
-		return "", fmt.Errorf("unsupported file name: %v", err)
-	}
-	subdir64 := name64 % assets.NumDirs
-	subdir := strconv.FormatUint(subdir64, 10)
+	subdir := imgName[:2]
 	return filepath.Join(c.OriginalsDir, subdir, imgName), nil
 }
 

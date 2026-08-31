@@ -1,7 +1,6 @@
 package util
 
 import (
-	"sync"
 	"sync/atomic"
 )
 
@@ -12,24 +11,21 @@ type entry[T any] struct {
 	index int32
 }
 
-type Queue[T any] struct {
+type LinkedQueue[T any] struct {
 	head *entry[T]
 	tail *entry[T]
 	size atomic.Int32
-	mu   sync.Mutex
 }
 
-func NewQueue[T any]() *Queue[T] {
-	return &Queue[T]{
+func NewQueue[T any]() *LinkedQueue[T] {
+	return &LinkedQueue[T]{
 		head: nil,
 		tail: nil}
 }
 
-func (q *Queue[T]) Push(data T) {
+func (q *LinkedQueue[T]) Push(data T) {
 	newEntry := &entry[T]{
 		data: data}
-	q.mu.Lock()
-	defer q.mu.Unlock()
 	if q.tail != nil {
 		q.tail.next = newEntry
 		newEntry.prev = q.tail
@@ -41,9 +37,7 @@ func (q *Queue[T]) Push(data T) {
 	q.size.Add(1)
 }
 
-func (q *Queue[T]) Pop() *T {
-	q.mu.Lock()
-	defer q.mu.Unlock()
+func (q *LinkedQueue[T]) Pop() *T {
 	if q.head == nil {
 		return nil
 	}
@@ -58,6 +52,6 @@ func (q *Queue[T]) Pop() *T {
 	return &val
 }
 
-func (q *Queue[T]) GetSize() int32 {
+func (q *LinkedQueue[T]) GetSize() int32 {
 	return q.size.Load()
 }

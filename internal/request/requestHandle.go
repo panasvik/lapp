@@ -123,7 +123,7 @@ func (h *HandlerManager) uploadHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Error saving file", http.StatusInternalServerError)
 		return
 	}
-	img, err := getImgData(path)
+	img, err := makeImgData(path)
 	if err != nil {
 		http.Error(w, "Error opening file", http.StatusInternalServerError)
 		return

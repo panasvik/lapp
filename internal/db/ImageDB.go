@@ -157,3 +157,9 @@ func initAndPopulateDB(dbPath string) error {
 	}
 	return <-errChan
 }
+
+func (db *ImageDB) InsertData(path string, userID int, date int) error {
+	query := `INSERT INTO images (userID, img_path, date) VALUES (?, ?, ?)`
+	_, err := db.Exec(query, userID, path, date)
+	return err
+}
