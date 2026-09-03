@@ -1,4 +1,5 @@
-/assets/
+/assets/cache
+/assets/uploads
 .dockerignore
 Dockerfile
 Dockerfile.debug
