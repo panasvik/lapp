@@ -1,11 +1,13 @@
 package main
 
 import (
+	"ImageCacheProject/internal/brocker"
 	"ImageCacheProject/internal/caching"
 	"ImageCacheProject/internal/db"
 	"ImageCacheProject/internal/env"
 	"ImageCacheProject/internal/request"
 	"ImageCacheProject/internal/upload"
+	"ImageCacheProject/internal/util"
 	"bufio"
 	"context"
 	"flag"
@@ -43,13 +45,13 @@ func main() {
 	}()
 
 	eem := env.NewEventManager()
-	fmu := caching.NewTable()
-	cacheManager := caching.InitCache(ctx, fmu)
-	eem.Attach(cacheManager, "CACHE_DIR")
-	eem.Attach(cacheManager, "UPLOADS_DIR")
+	fmu := util.NewTable()
+	paths := util.Paths{}
+	cacheManager := caching.InitCache(ctx, fmu, &paths)
+	eem.Attach(&paths, "CACHE_DIR")
+	eem.Attach(&paths, "UPLOADS_DIR")
 
-	uploadManager := upload.NewManager(fmu)
-	eem.Attach(uploadManager, "UPLOADS_DIR")
+	uploadManager := upload.NewManager(fmu, &paths)
 
 	err = eem.InitPaths(".")
 	if err != nil {
@@ -57,7 +59,13 @@ func main() {
 	}
 	cacheManager.StartBGProcesses()
 
-	handler := request.NewHandler(ctx, ldb, cacheManager, uploadManager)
+	issChan := make(chan util.Issue, 10)
+	errH := brocker.NewErrorHandler(ctx, &paths, issChan, fmu)
+	go errH.RunHandler()
+	dbh := brocker.NewDBHandler(ctx, issChan)
+
+	handler := request.NewHandler(ctx, cacheManager, uploadManager, dbh, ldb, ldb, ldb)
+
 	srv := &http.Server{
 		Addr: ":8080",
 	}

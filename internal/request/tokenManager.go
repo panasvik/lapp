@@ -1,7 +1,7 @@
-package auth
+package request
 
 import (
-	"database/sql"
+	"crypto/rand"
 	"errors"
 	"time"
 
@@ -26,8 +26,7 @@ type TokenInfo struct {
 }
 
 type Authenticator struct {
-	key string
-	db  sql.DB
+	key []byte
 }
 
 func (a *Authenticator) GenerateToken(id int, role string, lifetime time.Duration) (string, error) {
@@ -53,12 +52,6 @@ func (a *Authenticator) GetUserTokens(userID int) (string, string, error) {
 		return "", "", err
 	}
 	return accessToken, refreshToken, err
-}
-
-func (a *Authenticator) UpdateEnv(key string, val string) {
-	if key == "SECRET_KEY" {
-		a.key = val
-	}
 }
 
 func (a *Authenticator) ValidateToken(tokenString string) (jwt.MapClaims, error) {
@@ -88,4 +81,14 @@ func (a *Authenticator) CheckToken(token string) (TokenInfo, error) {
 	return TokenInfo{int(claims["userID"].(float64)), claims["role"].(string), int64(claims["exp"].(float64)), int64(claims["iat"].(float64))}, nil
 }
 
-func NewAuthenticator
+func NewAuthenticator() *Authenticator {
+	key := generateHMACSecret(32)
+	return &Authenticator{key: key}
+}
+
+func generateHMACSecret(byteLength int) []byte {
+	key := make([]byte, byteLength)
+	rand.Read(key)
+
+	return key
+}

@@ -1,7 +1,7 @@
 package upload
 
 import (
-	"ImageCacheProject/internal/caching"
+	"ImageCacheProject/internal/util"
 	"encoding/hex"
 	"hash"
 	"hash/fnv"
@@ -11,15 +11,15 @@ import (
 )
 
 type Manager struct {
-	caching.Paths
-	fmu *caching.FileMutex
+	*util.Paths
+	fmu *util.FileMutex
 }
 
-func (m *Manager) SaveUploadedFile(fileName string, src io.Reader) (finalPath string, err error) {
+func (m *Manager) SaveUploadedFile(fileName string, src io.Reader) (finalPath string, callback func() error, err error) {
 	tmpFile, err := os.CreateTemp(m.OriginalsDir, "upload-*.tmp")
 	ext := filepath.Ext(fileName)
 	if err != nil {
-		return "", err
+		return "", nil, err
 	}
 	tmpName := tmpFile.Name()
 	defer func() {
@@ -32,10 +32,13 @@ func (m *Manager) SaveUploadedFile(fileName string, src io.Reader) (finalPath st
 	new64a := fnv.New64a()
 	err = m.copy(tmpFile, new64a, src)
 	if err != nil {
-		return "", err
+		return "", nil, err
 	}
 	finalPath, err = m.rename(new64a, tmpName, ext)
-	return finalPath, err
+	callback = func() error {
+		return m.callback(finalPath)
+	}
+	return finalPath, callback, err
 }
 
 func (m *Manager) rename(new64a hash.Hash64, tmpName string, ext string) (string, error) {
@@ -65,8 +68,14 @@ func (m *Manager) copy(tmpFile *os.File, new64a hash.Hash64, src io.Reader) erro
 	return nil
 }
 
-func NewManager(fmu *caching.FileMutex) *Manager {
+func NewManager(fmu *util.FileMutex, paths *util.Paths) *Manager {
 	return &Manager{
-		caching.Paths{"", ""},
+		paths,
 		fmu}
+}
+
+func (m *Manager) callback(imgPath string) error {
+	origPath := m.GetOrigPath(imgPath)
+	err := m.fmu.Remove(origPath)
+	return err
 }

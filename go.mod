@@ -10,6 +10,8 @@ require (
 
 require (
 	github.com/davidbyttow/govips/v2 v2.18.0 // indirect
+	github.com/go-chi/chi/v5 v5.3.2 // indirect
+	github.com/golang-jwt/jwt/v5 v5.3.1 // indirect
 	golang.org/x/image v0.38.0 // indirect
 	golang.org/x/net v0.52.0 // indirect
 	golang.org/x/sync v0.22.0 // indirect

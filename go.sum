@@ -1,5 +1,9 @@
 github.com/davidbyttow/govips/v2 v2.18.0 h1:pZRshWVYvewP/TZx3yZ7YeC42WyLXg53tHy5Qt8nT9E=
 github.com/davidbyttow/govips/v2 v2.18.0/go.mod h1:8+nst5zfMoats12PgmmAPh6p5OfjDaXK0BXMFl/vOcM=
+github.com/go-chi/chi/v5 v5.3.2 h1:5YQkICvTCSZ25hoRsyJazN0scjzKGiu4VAUc7H1o1nY=
+github.com/go-chi/chi/v5 v5.3.2/go.mod h1:R+tYY2hNuVUUjxoPtqUdgBqevM9s9njzkTLutVsOCto=
+github.com/golang-jwt/jwt/v5 v5.3.1 h1:kYf81DTWFe7t+1VvL7eS+jKFVWaUnK9cB1qbwn63YCY=
+github.com/golang-jwt/jwt/v5 v5.3.1/go.mod h1:fxCRLWMO43lRc8nhHWY6LGqRcf+1gQWArsqaEUEa5bE=
 github.com/h2non/bimg v1.1.9 h1:WH20Nxko9l/HFm4kZCA3Phbgu2cbHvYzxwxn9YROEGg=
 github.com/h2non/bimg v1.1.9/go.mod h1:R3+UiYwkK4rQl6KVFTOFJHitgLbZXBZNFh2cv3AEbp8=
 github.com/mattn/go-sqlite3 v1.14.49 h1:B8jBHC3xhxZgxztrgruTuLucebnULQnx4W7cF7SAE9w=

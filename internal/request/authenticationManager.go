@@ -1,7 +1,6 @@
 package request
 
 import (
-	"ImageCacheProject/internal/auth"
 	"context"
 	"errors"
 	"net/http"
@@ -9,12 +8,22 @@ import (
 )
 
 type authManager struct {
-	authenticator *auth.Authenticator
+	authenticator *Authenticator
 }
 
 type contextKey string
 
 const userIDKey contextKey = "userID"
+
+type Role string
+
+const UserRole Role = "user"
+const AdminRole Role = "admin"
+
+type userInfo struct {
+	userID int
+	role   Role
+}
 
 func ContextWithUserID(ctx context.Context, userID int) context.Context {
 	return context.WithValue(ctx, userIDKey, userID)
@@ -55,10 +64,10 @@ func (a *authManager) AuthMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		userID, err := a.checkAccessToken(r)
 		switch {
-		case errors.Is(err, ErrAuthHeaderMissing), errors.Is(err, ErrWrongHeaderFormat):
+		case errors.Is(err, ErrAuthHeaderMissing), errors.Is(err, ErrWrongHeaderFormat), errors.Is(err, ErrWrongTokenType):
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
-		case errors.Is(err, auth.ErrInvalidToken), errors.Is(err, auth.ErrWrongTokenType):
+		case errors.Is(err, ErrInvalidToken):
 			http.Error(w, err.Error(), http.StatusUnauthorized)
 			return
 		case err != nil:
