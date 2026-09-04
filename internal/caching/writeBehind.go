@@ -1,6 +1,7 @@
 package caching
 
 import (
+	"ImageCacheProject/internal/util"
 	"context"
 	"errors"
 	"fmt"
@@ -32,10 +33,10 @@ type restartInfo struct {
 }
 
 type WriteBehind struct {
-	Paths
+	util.Paths
 	ctx         context.Context
 	restartChan chan *restartInfo
-	fmu         *FileMutex
+	fmu         *util.FileMutex
 	cm          cacheManager
 	cancel      context.CancelFunc
 	errChan     chan error
@@ -59,7 +60,7 @@ func (wb *WriteBehind) lazyWrite(imgBytes []byte, imgCachePath string, retryCoun
 		return
 	}
 	wb.cm.AddSize(imgSize)
-	tmpFile, err := os.CreateTemp(wb.CacheDir, "cached-*.tmp")
+	tmpFile, err := os.CreateTemp(wb.CacheLibDir, "cached-*.tmp")
 	if err != nil {
 		wb.restartChan <- ri
 		wb.cm.AddSize(-imgSize)

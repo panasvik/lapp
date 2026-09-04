@@ -2,6 +2,7 @@ package caching
 
 import (
 	"ImageCacheProject/internal/env"
+	"ImageCacheProject/internal/util"
 	"context"
 	"log"
 	"os"
@@ -16,13 +17,13 @@ const (
 )
 
 type cacheEvictor struct {
-	Paths
+	*util.Paths
 	ctx       context.Context
 	cleanReq  <-chan struct{}
 	startStop chan<- struct{}
 	cm        cacheManager
 	cancel    context.CancelFunc
-	fmu       *FileMutex
+	fmu       *util.FileMutex
 	envEM     *env.EventManager
 }
 
@@ -50,7 +51,7 @@ func (ce *cacheEvictor) clean(cutoffTime time.Time, low int64) {
 	case <-ce.ctx.Done():
 		return
 	default:
-		err := filepath.WalkDir(ce.CacheDir, func(path string, d os.DirEntry, err error) error {
+		err := filepath.WalkDir(ce.CacheLibDir, func(path string, d os.DirEntry, err error) error {
 			if ce.cm.GetSize() < low {
 				return filepath.SkipAll
 			}

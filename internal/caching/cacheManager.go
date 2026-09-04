@@ -2,6 +2,7 @@ package caching
 
 import (
 	"ImageCacheProject/internal/env"
+	"ImageCacheProject/internal/util"
 	"context"
 	"fmt"
 	"os"
@@ -11,11 +12,6 @@ import (
 	"github.com/h2non/bimg"
 	"golang.org/x/sync/singleflight"
 )
-
-type Paths struct {
-	OriginalsDir string
-	CacheDir     string
-}
 
 const (
 	megabyte = 1024 * 1024
@@ -42,22 +38,22 @@ type cacheCleaner interface {
 
 type CacheManager struct {
 	//usageMap   map[string]*usage
-	Paths
+	*util.Paths
 	cap          int64
 	size         atomic.Int64
 	cc           cacheCleaner
 	lc           lazyCacher
 	cleanReq     chan<- struct{}
-	fmu          *FileMutex
+	fmu          *util.FileMutex
 	requestGroup singleflight.Group
 	envEM        *env.EventManager
 }
 
 func (c *CacheManager) GetImg(imgName string) (string, error) {
-	cachePath := filepath.Join(c.CacheDir, imgName)
+	cachePath := filepath.Join(c.CacheManDir, imgName)
 
 	if !c.fmu.Exists(cachePath) {
-		return "", fmt.Errorf("cache: %w", ErrImgNotFound)
+		return "", fmt.Errorf("cache: %w", util.ErrImgNotFound)
 	}
 
 	//c.usageMap[imgPath].timesUsed += 1
@@ -66,11 +62,8 @@ func (c *CacheManager) GetImg(imgName string) (string, error) {
 }
 
 func (c *CacheManager) LoadNGetImg(imgName string) ([]byte, error) {
-	origImgPath, err := c.GetOrigPath(imgName)
+	origImgPath := c.GetOrigPath(imgName)
 
-	if err != nil {
-		return nil, err
-	}
 	res, err, _ := c.requestGroup.Do(origImgPath, func() (any, error) {
 		return c.loadImg(origImgPath)
 	})
@@ -84,7 +77,7 @@ func (c *CacheManager) LoadNGetImg(imgName string) ([]byte, error) {
 		return nil, fmt.Errorf("internal error: singleflight returned unexpected type: %T", res)
 	}
 
-	cacheImgPath := filepath.Join(c.CacheDir, imgName)
+	cacheImgPath := filepath.Join(c.CacheManDir, imgName)
 	c.lc.LazyWrite(imgBytes, cacheImgPath)
 	return imgBytes, nil
 }
@@ -126,18 +119,18 @@ func (c *CacheManager) GetCap() int64 {
 	return c.cap
 }
 
-func InitCache(ctxP context.Context, fmu *FileMutex) *CacheManager {
+func InitCache(ctxP context.Context, fmu *util.FileMutex, p *util.Paths) *CacheManager {
 	cleanChan := make(chan struct{}, 1)
 	startStop := make(chan struct{}, 1)
 
 	ctx, cancel := context.WithCancel(ctxP)
 	cm := &CacheManager{
-		Paths:    Paths{"", ""},
+		Paths:    p,
 		cap:      initCap,
 		cleanReq: cleanChan,
 		fmu:      fmu}
 	ce := &cacheEvictor{
-		Paths:     Paths{"", ""},
+		Paths:     p,
 		ctx:       ctx,
 		cleanReq:  cleanChan,
 		cancel:    cancel,
@@ -172,21 +165,6 @@ func (c *CacheManager) Close() {
 	c.cc.Stop()
 }
 
-func (c *CacheManager) UpdateEnv(key string, val string) {
-	c.Paths.UpdateEnv(key, val)
-	c.cc.UpdateEnv(key, val)
-}
-
-func (p *Paths) UpdateEnv(key string, val string) {
-	switch key {
-	case "CACHE_DIR":
-		p.CacheDir = val
-	case "UPLOADS_DIR":
-		p.OriginalsDir = val
-	default:
-	}
-}
-
 func (c *CacheManager) LockFile(path string) (err error) {
 	return c.fmu.CacheLockFile(path)
 }
@@ -195,14 +173,9 @@ func (c *CacheManager) UnlockFile(path string) {
 	c.fmu.CacheUnlockFile(path)
 }
 
-func (c *CacheManager) GetOrigPath(imgName string) (string, error) {
-	subdir := imgName[:2]
-	return filepath.Join(c.OriginalsDir, subdir, imgName), nil
-}
-
 func (c *CacheManager) populateFmu() int64 {
 	size := int64(0)
-	err := filepath.WalkDir(c.CacheDir, func(path string, d os.DirEntry, err error) error {
+	err := filepath.WalkDir(c.CacheManDir, func(path string, d os.DirEntry, err error) error {
 		if err != nil {
 			return err
 		}
