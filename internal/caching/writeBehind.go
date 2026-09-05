@@ -83,7 +83,7 @@ func (wb *WriteBehind) lazyWrite(imgBytes []byte, imgCachePath string, retryCoun
 		wb.errChan <- fmt.Errorf("%s %w", tmpName, ErrTmpWrite)
 		return
 	}
-
+	tmpFile.Close()
 	err = os.Rename(tmpName, imgCachePath)
 	if err != nil {
 		wb.errChan <- fmt.Errorf("%s %w", tmpName, ErrTmpRename)

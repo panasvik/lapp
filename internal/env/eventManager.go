@@ -65,7 +65,11 @@ func (e *EventManager) InitPaths(basePath string) error {
 			return err
 		}
 	}
-	err := e.SetEnv("CACHE_LIB_DIR", filepath.Join(basePath, "assets", "cache", "lib"))
+	err := e.SetEnv("CACHE_DIR", filepath.Join(basePath, "assets", "cache"))
+	if err != nil {
+		return err
+	}
+	err = e.SetEnv("CACHE_LIB_DIR", filepath.Join(basePath, "assets", "cache", "lib"))
 	if err != nil {
 		return err
 	}

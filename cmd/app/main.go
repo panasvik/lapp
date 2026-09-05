@@ -30,7 +30,7 @@ func main() {
 
 	setUpLogger()
 
-	ctx, cancel, cancelChan := mainSetup()
+	ctx, cancel, cancelChan, msgChan := mainSetup()
 
 	ldb, err := db.Connect()
 	if err != nil {
@@ -49,6 +49,8 @@ func main() {
 	paths := util.Paths{}
 	cacheManager := caching.InitCache(ctx, fmu, &paths)
 	eem.Attach(&paths, "CACHE_DIR")
+	eem.Attach(&paths, "CACHE_MAN_DIR")
+	eem.Attach(&paths, "CACHE_LIB_DIR")
 	eem.Attach(&paths, "UPLOADS_DIR")
 
 	uploadManager := upload.NewManager(fmu, &paths)
@@ -58,7 +60,7 @@ func main() {
 		panic(err)
 	}
 	cacheManager.StartBGProcesses()
-
+	go cacheManager.CLICacheSize(ctx, msgChan)
 	issChan := make(chan util.Issue, 10)
 	errH := brocker.NewErrorHandler(ctx, &paths, issChan, fmu)
 	go errH.RunHandler()
@@ -110,20 +112,25 @@ func setUpLogger() {
 
 }
 
-func readInput(cancelChan chan<- struct{}, scanner *bufio.Scanner) {
+func readInput(cancelChan chan<- struct{}, msgChan chan<- struct{}, scanner *bufio.Scanner) {
 	for scanner.Scan() {
 		line := scanner.Text()
 		if line == "exit" {
 			cancelChan <- struct{}{}
 			break
 		}
+		if line == "size" {
+			msgChan <- struct{}{}
+		}
 	}
 }
 
-func mainSetup() (context.Context, context.CancelFunc, chan struct{}) {
+func mainSetup() (context.Context, context.CancelFunc, chan struct{}, chan struct{}) {
 	ctx, cancel := context.WithTimeout(context.Background(), time.Hour)
 	scanner := bufio.NewScanner(os.Stdin)
 	cancelChan := make(chan struct{})
-	go readInput(cancelChan, scanner)
-	return ctx, cancel, cancelChan
+	msgChan := make(chan struct{})
+
+	go readInput(cancelChan, msgChan, scanner)
+	return ctx, cancel, cancelChan, msgChan
 }

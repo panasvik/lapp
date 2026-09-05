@@ -51,7 +51,7 @@ func (ce *cacheEvictor) clean(cutoffTime time.Time, low int64) {
 	case <-ce.ctx.Done():
 		return
 	default:
-		err := filepath.WalkDir(ce.CacheLibDir, func(path string, d os.DirEntry, err error) error {
+		err := filepath.WalkDir(ce.CacheDir, func(path string, d os.DirEntry, err error) error {
 			if ce.cm.GetSize() < low {
 				return filepath.SkipAll
 			}

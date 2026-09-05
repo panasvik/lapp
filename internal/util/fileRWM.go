@@ -166,12 +166,15 @@ func (fm *FileMutex) Copy(dst io.Writer, src io.Reader) error {
 
 type Paths struct {
 	OriginalsDir string
+	CacheDir     string
 	CacheLibDir  string
 	CacheManDir  string
 }
 
 func (p *Paths) UpdateEnv(key string, val string) {
 	switch key {
+	case "CACHE_DIR":
+		p.CacheDir = val
 	case "CACHE_LIB_DIR":
 		p.CacheLibDir = val
 	case "CACHE_MAN_DIR":

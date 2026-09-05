@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
 	"sync/atomic"
 
 	"github.com/h2non/bimg"
@@ -20,7 +21,7 @@ var (
 
 const (
 	megabyte = 1024 * 1024
-	initCap  = 1 * 1024 * megabyte
+	initCap  = 16 * megabyte
 )
 
 type lazyCacher interface {
@@ -176,7 +177,7 @@ func (c *CacheManager) UnlockFile(path string) {
 
 func (c *CacheManager) populateFmu() int64 {
 	size := int64(0)
-	err := filepath.WalkDir(c.CacheManDir, func(path string, d os.DirEntry, err error) error {
+	err := filepath.WalkDir(c.CacheDir, func(path string, d os.DirEntry, err error) error {
 		if err != nil {
 			return err
 		}
@@ -217,6 +218,18 @@ func (c *CacheManager) formImgPath(imgName string, imgType ImageCategory) (strin
 		return filepath.Join(c.CacheLibDir, imgName), nil
 	}
 	return "", ErrWrongPhotoType
+}
+
+func (c *CacheManager) CLICacheSize(ctx context.Context, msgChan chan struct{}) {
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-msgChan:
+			fmt.Println("size: " + strconv.FormatInt(c.size.Load(), 10) + "cap: " + strconv.FormatInt(c.cap, 10))
+			fmt.Println("left: " + strconv.FormatInt(c.cap-c.size.Load(), 10))
+		}
+	}
 }
 
 //options := bimg.Options{
