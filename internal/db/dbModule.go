@@ -107,6 +107,38 @@ func (db *AppDB) GetNames(targetDate int, userID int) (names []string, err error
 	return names, nil
 }
 
+func (db *AppDB) GetLibsNames(userID int) (names []string, err error) {
+	if !db.IsOpen.Load() {
+		return nil, fmt.Errorf("DataBase is closed")
+	}
+
+	query := `
+		SELECT img_path 
+		FROM images 
+		WHERE userID = ? 
+	`
+
+	rows, err := db.Query(query, userID)
+	if err != nil {
+		return nil, fmt.Errorf("error completing request: %w", err)
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var name string
+		if err := rows.Scan(&name); err != nil {
+			return nil, fmt.Errorf("error parsing string: %w", err)
+		}
+		names = append(names, name)
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("error reading results: %w", err)
+	}
+
+	return names, nil
+}
+
 func ColdBoot() {
 	err := initAndPopulateImageDB("loveApp.db")
 	if err != nil {
@@ -131,17 +163,29 @@ func initAndPopulateImageDB(dbPath string) error {
 	defer db.Close()
 
 	createTableSQL := `
-	CREATE TABLE IF NOT EXISTS images (
-		userID INTEGER,
-		img_path TEXT,
-		date INTEGER
-	);`
+    CREATE TABLE IF NOT EXISTS images (
+       userID INTEGER,
+       img_path TEXT,
+       date INTEGER
+    );`
 
 	if _, err := db.Exec(createTableSQL); err != nil {
 		return fmt.Errorf("не удалось создать таблицу: %w", err)
 	}
 
-	query := `INSERT INTO images (userID, img_path, date) VALUES (?, ?, ?)`
+	createIndexSQL := `
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_images_user_path 
+    ON images (userID, img_path);`
+
+	if _, err := db.Exec(createIndexSQL); err != nil {
+		return fmt.Errorf("не удалось создать уникальный индекс: %w", err)
+	}
+
+	query := `
+    INSERT INTO images (userID, img_path, date) 
+    VALUES (?, ?, ?)
+    ON CONFLICT (userID, img_path) DO NOTHING`
+
 	stmt, err := db.Prepare(query)
 	if err != nil {
 		return fmt.Errorf("ошибка подготовки запроса: %w", err)
@@ -161,7 +205,12 @@ func initAndPopulateImageDB(dbPath string) error {
 }
 
 func (db *AppDB) InsertImage(path string, userID int, date int) error {
-	query := `INSERT INTO images (userID, img_path, date) VALUES (?, ?, ?)`
+	query := `
+    	INSERT INTO images (userID, img_path, date) 
+    	VALUES (?, ?, ?) 
+    	ON CONFLICT (userID, img_path) DO NOTHING
+	`
+
 	_, err := db.Exec(query, userID, path, date)
 	return err
 }

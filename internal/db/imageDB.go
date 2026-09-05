@@ -26,6 +26,7 @@ const (
 
 type ImageDB interface {
 	GetNames(targetDate int, userID int) (names []string, err error)
+	GetLibsNames(userID int) (names []string, err error)
 	GetUserIDsByImgName(path string) ([]int, error)
 	ProcessEvent(e brocker.Event) util.Issue
 	PushLimit()

@@ -10,9 +10,12 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"net/url"
+	"strconv"
 
 	"github.com/go-chi/chi/v5"
 	chimiddleware "github.com/go-chi/chi/v5/middleware"
+	"github.com/h2non/bimg"
 )
 
 type HandlerManager struct {
@@ -71,16 +74,17 @@ func StartReqHandling(srv *http.Server, h *HandlerManager) {
 	router.Group(func(r chi.Router) {
 		r.Post("/auth/register", h.handleSignIn)
 		r.Post("/auth/login", h.handleLogIn)
-		r.Post("/auth/refresh", h.refreshHandler)
+		r.Post("/auth/refresh", h.handleRefresh)
 
-		r.Get("/api/image/*", h.imgHandler)
+		r.Get("/api/image/*", h.handleImage)
 	})
 
 	router.Group(func(r chi.Router) {
 		r.Use(h.auth.AuthMiddleware)
 
-		r.Post("/api/manifest", h.manifestHandler)
-		r.Post("/api/upload/images", h.uploadHandler)
+		r.Post("/api/manifest", h.handleManifest)
+		r.Post("/api/library/refresh", h.handleLibRefresh)
+		r.Post("/api/upload/images", h.handleUpload)
 		r.Post("/auth/logout", h.handleLogOut)
 	})
 
@@ -96,7 +100,7 @@ func startListening(srv *http.Server) {
 	}
 }
 
-func (h *HandlerManager) imgHandler(w http.ResponseWriter, r *http.Request) {
+func (h *HandlerManager) handleImage(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Access-Control-Allow-Origin", "*")
 
 	imgName := chi.URLParam(r, "*")
@@ -107,8 +111,9 @@ func (h *HandlerManager) imgHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	defer r.Body.Close()
+	cOpt := GetImgOptions(r)
 
-	cacheImgPath, err := h.cacheManager.GetImg(imgName)
+	cacheImgPath, err := h.cacheManager.GetImg(imgName, cOpt.Category)
 	if err == nil {
 		err = h.cacheManager.LockFile(cacheImgPath)
 		if err != nil {
@@ -120,7 +125,7 @@ func (h *HandlerManager) imgHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	imgBytes, err := h.cacheManager.LoadNGetImg(imgName)
+	imgBytes, err := h.cacheManager.LoadNGetImg(imgName, cOpt)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -134,7 +139,7 @@ func (h *HandlerManager) imgHandler(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func (h *HandlerManager) manifestHandler(w http.ResponseWriter, r *http.Request) {
+func (h *HandlerManager) handleManifest(w http.ResponseWriter, r *http.Request) {
 	userID, ok := UserIDFromContext(r.Context())
 	if !ok {
 		http.Error(w, "unauthorized", http.StatusUnauthorized)
@@ -164,7 +169,7 @@ func (h *HandlerManager) manifestHandler(w http.ResponseWriter, r *http.Request)
 	w.WriteHeader(http.StatusOK)
 }
 
-func (h *HandlerManager) uploadHandler(w http.ResponseWriter, r *http.Request) {
+func (h *HandlerManager) handleUpload(w http.ResponseWriter, r *http.Request) {
 	file, header, err := r.FormFile("image")
 	if err != nil {
 		http.Error(w, "unable to get file", http.StatusBadRequest)
@@ -196,20 +201,21 @@ func (h *HandlerManager) uploadHandler(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(response)
 }
 
-func (h *HandlerManager) refreshHandler(w http.ResponseWriter, r *http.Request) {
+func (h *HandlerManager) handleRefresh(w http.ResponseWriter, r *http.Request) {
+
 	var req RefreshReq
 	defer r.Body.Close()
 
-	errt := json.NewDecoder(r.Body).Decode(&req)
-	if errt != nil {
+	err := json.NewDecoder(r.Body).Decode(&req)
+	if err != nil {
 		http.Error(w, "wrong JSON format", http.StatusBadRequest)
 		return
 	}
 
-	dbinfo, errdb := h.tokenDB.GetRefreshTokenInfo(req.RefreshToken)
+	dbinfo, err := h.tokenDB.GetRefreshTokenInfo(req.RefreshToken)
 
-	if errdb != nil {
-		http.Error(w, errdb.Error(), http.StatusUnauthorized)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusUnauthorized)
 		return
 	}
 
@@ -218,20 +224,20 @@ func (h *HandlerManager) refreshHandler(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	info, errauth := h.auth.authenticator.CheckToken(req.RefreshToken)
-	if errauth != nil {
-		http.Error(w, errauth.Error(), http.StatusUnauthorized)
+	info, err := h.auth.authenticator.CheckToken(req.RefreshToken)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusUnauthorized)
 		return
 	}
 
-	access, refresh, errt := h.auth.authenticator.GetUserTokens(info.UserID)
-	if errt != nil {
-		http.Error(w, errt.Error(), http.StatusInternalServerError)
+	access, refresh, err := h.auth.authenticator.GetUserTokens(info.UserID)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	newRTokenInfo, errtn := h.auth.authenticator.CheckToken(refresh)
-	if errtn != nil {
-		http.Error(w, errtn.Error(), http.StatusInternalServerError)
+	newRTokenInfo, err := h.auth.authenticator.CheckToken(refresh)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 	ud := db.TokenData{UserID: newRTokenInfo.UserID, DeviceName: dbinfo.DeviceName, RefreshToken: refresh, Exp: newRTokenInfo.Exp, Iat: newRTokenInfo.Iat}
@@ -327,9 +333,62 @@ func (h *HandlerManager) handleLogOut(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusOK)
 }
 
+func (h *HandlerManager) handleLibRefresh(w http.ResponseWriter, r *http.Request) {
+	userID, ok := UserIDFromContext(r.Context())
+	if !ok {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
+	imgNames, err := h.imageDB.GetLibsNames(userID)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	if err := json.NewEncoder(w).Encode(imgNames); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	w.WriteHeader(http.StatusOK)
+}
+
 func NewHandler(ctx context.Context, cm *caching.CacheManager, um *upload.Manager, handler *brocker.DBHandler, tdb db.TokenDB, ldb db.ImageDB, udb db.UserDB) *HandlerManager {
 	auth := NewAuthenticator()
 
 	return &HandlerManager{
 		ctx: ctx, imageDB: ldb, tokenDB: tdb, userDB: udb, cacheManager: cm, uploadManager: um, dbHandler: handler, auth: &authManager{auth}}
+}
+
+func GetImgOptions(r *http.Request) caching.Options {
+	u := r.URL.Query()
+	Category := GetIntQueryParam(u, "img_type", 0, func(val int) bool { return true })
+	Width := GetIntQueryParam(u, "width", 100, func(val int) bool { return val > 0 })
+	Height := GetIntQueryParam(u, "height", 100, func(val int) bool { return val > 0 })
+	Quality := GetIntQueryParam(u, "quality", 75, func(val int) bool { return val > 0 && val <= 100 })
+	Type := GetBimgTypeParam(u, "type")
+	return caching.Options{
+		Category: caching.ImageCategory(Category), BimgOpt: bimg.Options{
+			Width: Width, Height: Height, Quality: Quality,
+			Type: Type, StripMetadata: true,
+			Crop: true, Gravity: bimg.GravitySmart}}
+
+}
+
+func GetIntQueryParam(u url.Values, key string, defaultVal int, cond func(val int) bool) int {
+	valS := u.Get(key)
+	val, err := strconv.Atoi(valS)
+	if err != nil || !cond(val) {
+		val = defaultVal
+	}
+	return val
+}
+
+func GetBimgTypeParam(u url.Values, key string) bimg.ImageType {
+	valS := u.Get(key)
+	switch {
+	case valS == "JPEG":
+		return bimg.JPEG
+	case valS == "PNG":
+		return bimg.PNG
+	}
+	return bimg.JPEG
 }

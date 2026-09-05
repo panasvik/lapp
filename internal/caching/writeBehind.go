@@ -86,12 +86,13 @@ func (wb *WriteBehind) lazyWrite(imgBytes []byte, imgCachePath string, retryCoun
 
 	err = os.Rename(tmpName, imgCachePath)
 	if err != nil {
-		wb.cm.AddSize(-imgSize)
 		wb.errChan <- fmt.Errorf("%s %w", tmpName, ErrTmpRename)
 		err = wb.fmu.Remove(tmpName)
 		if err != nil {
 			wb.errChan <- fmt.Errorf("%s %w", tmpName, ErrTmpRename)
+			return
 		}
+		wb.cm.AddSize(-imgSize)
 		return
 	}
 	wb.fmu.AddFileState(imgCachePath, 0)

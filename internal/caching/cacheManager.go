@@ -4,6 +4,7 @@ import (
 	"ImageCacheProject/internal/env"
 	"ImageCacheProject/internal/util"
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -11,6 +12,10 @@ import (
 
 	"github.com/h2non/bimg"
 	"golang.org/x/sync/singleflight"
+)
+
+var (
+	ErrWrongPhotoType = errors.New("unknown photo type")
 )
 
 const (
@@ -28,11 +33,10 @@ type cacheCleaner interface {
 	Start()
 	CleanAll()
 	Stop()
-	UpdateEnv(key string, val string)
 }
 
 //type usage struct {
-//	lastUsed  time.Time
+//	lastUsed time.Time
 //	timesUsed int
 //}
 
@@ -49,9 +53,11 @@ type CacheManager struct {
 	envEM        *env.EventManager
 }
 
-func (c *CacheManager) GetImg(imgName string) (string, error) {
-	cachePath := filepath.Join(c.CacheManDir, imgName)
-
+func (c *CacheManager) GetImg(imgName string, ImgType ImageCategory) (string, error) {
+	cachePath, err := c.formImgPath(imgName, ImgType)
+	if err != nil {
+		return "", fmt.Errorf("error in Options ImgType (%d): %w", ImgType, err)
+	}
 	if !c.fmu.Exists(cachePath) {
 		return "", fmt.Errorf("cache: %w", util.ErrImgNotFound)
 	}
@@ -61,11 +67,11 @@ func (c *CacheManager) GetImg(imgName string) (string, error) {
 	return cachePath, nil
 }
 
-func (c *CacheManager) LoadNGetImg(imgName string) ([]byte, error) {
+func (c *CacheManager) LoadNGetImg(imgName string, options Options) ([]byte, error) {
 	origImgPath := c.GetOrigPath(imgName)
 
 	res, err, _ := c.requestGroup.Do(origImgPath, func() (any, error) {
-		return c.loadImg(origImgPath)
+		return c.loadImg(origImgPath, options)
 	})
 
 	if err != nil {
@@ -77,26 +83,21 @@ func (c *CacheManager) LoadNGetImg(imgName string) ([]byte, error) {
 		return nil, fmt.Errorf("internal error: singleflight returned unexpected type: %T", res)
 	}
 
-	cacheImgPath := filepath.Join(c.CacheManDir, imgName)
+	cacheImgPath, err := c.formImgPath(imgName, options.Category)
+	if err != nil {
+		return nil, fmt.Errorf("error in Options ImgType (%d): %w", options.Category, err)
+	}
 	c.lc.LazyWrite(imgBytes, cacheImgPath)
 	return imgBytes, nil
 }
 
-func (c *CacheManager) loadImg(origImgPath string) ([]byte, error) {
+func (c *CacheManager) loadImg(origImgPath string, options Options) ([]byte, error) {
 	buffer, err := c.fmu.ReadFile(origImgPath)
 	if err != nil {
 		return nil, fmt.Errorf("error reading img: %w", err)
 	}
 
-	options := bimg.Options{
-		// Width:   800,       // Раскомментируйте, если нужно изменить ширину (сохранит пропорции)
-		// Height:  600,       // Если указать и Width и Height, картинка обрежется (Crop: true)
-		Quality:       75,        // Сжатие до 75% (отлично подходит для JPEG/WebP)
-		Type:          bimg.JPEG, // Принудительно конвертируем на выходе в JPEG
-		StripMetadata: true,      // Удаляем EXIF-данные (геолокацию, модель камеры), чтобы уменьшить вес
-	}
-
-	newImage, err := bimg.NewImage(buffer).Process(options)
+	newImage, err := bimg.NewImage(buffer).Process(options.BimgOpt)
 	if err != nil {
 		err = fmt.Errorf("unable to load img: %w", err)
 		return nil, err
@@ -195,3 +196,33 @@ func (c *CacheManager) populateFmu() int64 {
 	}
 	return size
 }
+
+type ImageCategory int
+
+const (
+	ManifestImage ImageCategory = 0
+	LibImage      ImageCategory = 1
+)
+
+type Options struct {
+	Category ImageCategory
+	BimgOpt  bimg.Options
+}
+
+func (c *CacheManager) formImgPath(imgName string, imgType ImageCategory) (string, error) {
+	switch imgType {
+	case ManifestImage:
+		return filepath.Join(c.CacheManDir, imgName), nil
+	case LibImage:
+		return filepath.Join(c.CacheLibDir, imgName), nil
+	}
+	return "", ErrWrongPhotoType
+}
+
+//options := bimg.Options{
+//	// Width:   800,       // Раскомментируйте, если нужно изменить ширину (сохранит пропорции)
+//	// Height:  600,       // Если указать и Width и Height, картинка обрежется (Crop: true)
+//	Quality:       75,        // Сжатие до 75% (отлично подходит для JPEG/WebP)
+//	Type:          bimg.JPEG, // Принудительно конвертируем на выходе в JPEG
+//	StripMetadata: true,      // Удаляем EXIF-данные (геолокацию, модель камеры), чтобы уменьшить вес
+//}
