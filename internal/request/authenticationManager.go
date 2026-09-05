@@ -55,7 +55,7 @@ func (a *authManager) checkAccessToken(r *http.Request) (int, error) {
 	}
 	info, err := a.authenticator.CheckToken(token)
 	if err != nil {
-		return -1, err
+		return -1, ErrInvalidToken
 	}
 	return info.UserID, nil
 }
