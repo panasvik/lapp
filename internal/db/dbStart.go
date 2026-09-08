@@ -28,7 +28,7 @@ func PopulateDB(data chan<- RowData, errChan chan<- error) {
 
 	defer close(data)
 
-	walkErr = filepath.WalkDir("uploads", func(path string, d fs.DirEntry, err error) error {
+	walkErr = filepath.WalkDir("./assets/uploads", func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return err
 		}
