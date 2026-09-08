@@ -9,9 +9,12 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"math/rand/v2"
 	"net/http"
 	"net/url"
+	"path/filepath"
 	"strconv"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 	chimiddleware "github.com/go-chi/chi/v5/middleware"
@@ -36,6 +39,10 @@ var (
 
 type ManifestReq struct {
 	Date int `json:"date"`
+}
+
+type ClientMeta struct {
+	CreationTime int64 `json:"creationTime"`
 }
 
 type LogInReq struct {
@@ -83,6 +90,8 @@ func StartReqHandling(srv *http.Server, h *HandlerManager) {
 		r.Use(h.auth.AuthMiddleware)
 
 		r.Post("/api/manifest", h.handleManifest)
+		r.Post("/api/random/manifest", h.handleRandomManifest)
+		r.Get("/api/random/image", h.handleRandomImage)
 		r.Post("/api/library/refresh", h.handleLibRefresh)
 		r.Post("/api/upload/images", h.handleUpload)
 		r.Post("/auth/logout", h.handleLogOut)
@@ -115,13 +124,11 @@ func (h *HandlerManager) handleImage(w http.ResponseWriter, r *http.Request) {
 
 	cacheImgPath, err := h.cacheManager.GetImg(imgName, cOpt.Category)
 	if err == nil {
-		err = h.cacheManager.LockFile(cacheImgPath)
+		rFunc := func(path string) { http.ServeFile(w, r, path) }
+		err = h.cacheManager.UseFile(cacheImgPath, rFunc)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
-			return
 		}
-		h.cacheManager.UnlockFile(cacheImgPath)
-		http.ServeFile(w, r, cacheImgPath)
 		return
 	}
 
@@ -170,35 +177,39 @@ func (h *HandlerManager) handleManifest(w http.ResponseWriter, r *http.Request) 
 }
 
 func (h *HandlerManager) handleUpload(w http.ResponseWriter, r *http.Request) {
+	t0 := time.Now()
 	file, header, err := r.FormFile("image")
 	if err != nil {
 		http.Error(w, "unable to get file", http.StatusBadRequest)
 		return
 	}
 	defer file.Close()
+	tNet := time.Since(t0)
+	t1 := time.Now()
 	path, callback, err := h.uploadManager.SaveUploadedFile(header.Filename, file)
 	if err != nil {
 		http.Error(w, "Error saving file", http.StatusInternalServerError)
 		return
 	}
-
+	tDisk := time.Since(t1)
 	userID, ok := UserIDFromContext(r.Context())
 	if !ok {
 		http.Error(w, "unauthorized", http.StatusUnauthorized)
 		return
 	}
+	t2 := time.Now()
 
-	img, err := db.MakeImgData(path, userID, callback)
-	if err != nil {
-		http.Error(w, "Error opening file", http.StatusInternalServerError)
-		return
-	}
+	clientDate := extractDate(r)
+	imgName := filepath.Base(path)
+	img := db.ImgData{UserID: userID, Path: imgName, Date: clientDate, Callback: callback}
 	h.dbHandler.Publish(img, brocker.InsertNewImage)
+	tDB := time.Since(t2)
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
 
 	response := []string{"/uploads/" + header.Filename}
 	json.NewEncoder(w).Encode(response)
+	fmt.Println("net time: " + tNet.String() + " disk time: " + tDisk.String() + " db time: " + tDB.String())
 }
 
 func (h *HandlerManager) handleRefresh(w http.ResponseWriter, r *http.Request) {
@@ -351,6 +362,77 @@ func (h *HandlerManager) handleLibRefresh(w http.ResponseWriter, r *http.Request
 	w.WriteHeader(http.StatusOK)
 }
 
+func (h *HandlerManager) handleRandomManifest(w http.ResponseWriter, r *http.Request) {
+	userID, ok := UserIDFromContext(r.Context())
+	if !ok {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Access-Control-Allow-Origin", "*")
+
+	defer r.Body.Close()
+
+	dates, err := h.imageDB.GetDates(userID)
+	if err != nil {
+		http.Error(w, "user has no photos", http.StatusBadRequest)
+		return
+	}
+	date := dates[rand.N(len(dates))]
+	imgPaths, err := h.imageDB.GetNames(date, userID)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	if err := json.NewEncoder(w).Encode(imgPaths); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	w.WriteHeader(http.StatusOK)
+}
+
+func (h *HandlerManager) handleRandomImage(w http.ResponseWriter, r *http.Request) {
+	userID, ok := UserIDFromContext(r.Context())
+	if !ok {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
+	w.Header().Set("Access-Control-Allow-Origin", "*")
+
+	defer r.Body.Close()
+	cOpt := GetImgOptions(r)
+
+	imgNames, err := h.imageDB.GetLibsNames(userID)
+	if err != nil {
+		http.Error(w, "user has no photos", http.StatusBadRequest)
+		return
+	}
+	imgName := imgNames[rand.N(len(imgNames))]
+	cacheImgPath, err := h.cacheManager.GetImg(imgName, cOpt.Category)
+	if err == nil {
+		rFunc := func(path string) { http.ServeFile(w, r, path) }
+		err = h.cacheManager.UseFile(cacheImgPath, rFunc)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+		}
+		return
+	}
+
+	imgBytes, err := h.cacheManager.LoadNGetImg(imgName, cOpt)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", http.DetectContentType(imgBytes))
+	_, err = w.Write(imgBytes)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+}
+
 func NewHandler(ctx context.Context, cm *caching.CacheManager, um *upload.Manager, handler *brocker.DBHandler, tdb db.TokenDB, ldb db.ImageDB, udb db.UserDB) *HandlerManager {
 	auth := NewAuthenticator()
 
@@ -391,4 +473,17 @@ func GetBimgTypeParam(u url.Values, key string) bimg.ImageType {
 		return bimg.PNG
 	}
 	return bimg.JPEG
+}
+
+func extractDate(r *http.Request) (clientDate int) {
+	if metaStr := r.FormValue("metadata"); metaStr != "" {
+		var cm ClientMeta
+		if err := json.Unmarshal([]byte(metaStr), &cm); err == nil && cm.CreationTime > 0 {
+			t := time.UnixMilli(cm.CreationTime)
+			clientDate, _ = strconv.Atoi(t.Format("20060102"))
+		} else {
+			clientDate, _ = strconv.Atoi(time.Now().Format("20060102"))
+		}
+	}
+	return clientDate
 }

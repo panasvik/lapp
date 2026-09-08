@@ -30,7 +30,7 @@ func main() {
 
 	setUpLogger()
 
-	ctx, cancel, cancelChan, msgChan := mainSetup()
+	ctx, cancel, cancelChan := mainSetup()
 
 	ldb, err := db.Connect()
 	if err != nil {
@@ -45,24 +45,23 @@ func main() {
 	}()
 
 	eem := env.NewEventManager()
-	fmu := util.NewTable()
 	paths := util.Paths{}
-	cacheManager := caching.InitCache(ctx, fmu, &paths)
+	cacheManager := caching.InitCache(ctx, &paths)
 	eem.Attach(&paths, "CACHE_DIR")
 	eem.Attach(&paths, "CACHE_MAN_DIR")
 	eem.Attach(&paths, "CACHE_LIB_DIR")
+	eem.Attach(&paths, "CACHE_MOD_DIR")
 	eem.Attach(&paths, "UPLOADS_DIR")
 
-	uploadManager := upload.NewManager(fmu, &paths)
+	uploadManager := upload.NewManager(&paths)
 
 	err = eem.InitPaths(".")
 	if err != nil {
 		panic(err)
 	}
 	cacheManager.StartBGProcesses()
-	go cacheManager.CLICacheSize(ctx, msgChan)
 	issChan := make(chan util.Issue, 10)
-	errH := brocker.NewErrorHandler(ctx, &paths, issChan, fmu)
+	errH := brocker.NewErrorHandler(ctx, &paths, issChan)
 	go errH.RunHandler()
 	dbh := brocker.NewDBHandler(ctx, issChan)
 
@@ -112,25 +111,20 @@ func setUpLogger() {
 
 }
 
-func readInput(cancelChan chan<- struct{}, msgChan chan<- struct{}, scanner *bufio.Scanner) {
+func readInput(cancelChan chan<- struct{}, scanner *bufio.Scanner) {
 	for scanner.Scan() {
 		line := scanner.Text()
 		if line == "exit" {
 			cancelChan <- struct{}{}
 			break
 		}
-		if line == "size" {
-			msgChan <- struct{}{}
-		}
 	}
 }
 
-func mainSetup() (context.Context, context.CancelFunc, chan struct{}, chan struct{}) {
+func mainSetup() (context.Context, context.CancelFunc, chan struct{}) {
 	ctx, cancel := context.WithTimeout(context.Background(), time.Hour)
 	scanner := bufio.NewScanner(os.Stdin)
 	cancelChan := make(chan struct{})
-	msgChan := make(chan struct{})
-
-	go readInput(cancelChan, msgChan, scanner)
-	return ctx, cancel, cancelChan, msgChan
+	go readInput(cancelChan, scanner)
+	return ctx, cancel, cancelChan
 }
