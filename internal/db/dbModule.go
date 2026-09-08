@@ -147,6 +147,7 @@ func (db *AppDB) GetLibsNames(userID int) (names []string, err error) {
 		SELECT img_path 
 		FROM images 
 		WHERE userID = ? 
+		ORDER BY date ASC 
 	`
 
 	rows, err := db.Query(query, userID)
