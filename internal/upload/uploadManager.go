@@ -12,7 +12,6 @@ import (
 
 type Manager struct {
 	*util.Paths
-	fmu *util.FileMutex
 }
 
 func (m *Manager) SaveUploadedFile(fileName string, src io.Reader) (finalPath string, callback func() error, err error) {
@@ -25,7 +24,7 @@ func (m *Manager) SaveUploadedFile(fileName string, src io.Reader) (finalPath st
 	defer func() {
 		tmpFile.Close()
 		if err != nil {
-			m.fmu.Remove(tmpName)
+			os.Remove(tmpName)
 		}
 	}()
 
@@ -58,7 +57,7 @@ func (m *Manager) rename(new64a hash.Hash64, tmpName string, ext string) (string
 
 func (m *Manager) copy(tmpFile *os.File, new64a hash.Hash64, src io.Reader) error {
 	mw := io.MultiWriter(tmpFile, new64a)
-	err := m.fmu.Copy(mw, src)
+	_, err := io.Copy(mw, src)
 	if err != nil {
 		return err
 	}
@@ -68,14 +67,13 @@ func (m *Manager) copy(tmpFile *os.File, new64a hash.Hash64, src io.Reader) erro
 	return nil
 }
 
-func NewManager(fmu *util.FileMutex, paths *util.Paths) *Manager {
+func NewManager(paths *util.Paths) *Manager {
 	return &Manager{
-		paths,
-		fmu}
+		paths}
 }
 
 func (m *Manager) callback(imgPath string) error {
 	origPath := m.GetOrigPath(imgPath)
-	err := m.fmu.Remove(origPath)
+	err := os.Remove(origPath)
 	return err
 }

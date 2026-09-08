@@ -7,24 +7,17 @@ import (
 	"fmt"
 	"log"
 	"os"
-	"time"
+	"sync"
 )
 
 const (
-	MaxRetry    = 2
-	MaxWaitTime = 60 * time.Second
+	MaxRetry = 2
 )
 
 var (
-	ErrTmpWrite  = errors.New("unable to create tmp file")
+	ErrTmpWrite  = errors.New("unable to write tmp file")
 	ErrTmpRename = errors.New("unable to rename tmp file, deleting")
 )
-
-type cacheManager interface {
-	AddSize(n int64)
-	GetSize() int64
-	GetCap() int64
-}
 
 type restartInfo struct {
 	imgBytes     []byte
@@ -33,113 +26,148 @@ type restartInfo struct {
 }
 
 type WriteBehind struct {
-	util.Paths
+	*util.Paths
 	ctx         context.Context
 	restartChan chan *restartInfo
-	fmu         *util.FileMutex
-	cm          cacheManager
+	storage     *cacheStorage
 	cancel      context.CancelFunc
 	errChan     chan error
-	startStop   <-chan struct{}
+	wg          sync.WaitGroup
+	limit       chan struct{}
+}
+
+func (wb *WriteBehind) sendToRestart(ri *restartInfo) {
+	select {
+	case <-wb.ctx.Done():
+		return
+	case wb.restartChan <- ri:
+	}
+}
+
+func (wb *WriteBehind) sendErr(err error) {
+	select {
+	case <-wb.ctx.Done():
+		return
+	case wb.errChan <- err:
+	}
 }
 
 func (wb *WriteBehind) LazyWrite(imgBytes []byte, dst string) {
-	go wb.lazyWrite(imgBytes, dst, 0)
+	wb.wg.Go(func() {
+		wb.lazyWrite(imgBytes, dst, 0)
+	})
 }
 
 func (wb *WriteBehind) lazyWrite(imgBytes []byte, imgCachePath string, retryCount int) {
+	wb.limit <- struct{}{}
+	defer func() { <-wb.limit }()
+
 	ri := &restartInfo{
 		imgBytes:     imgBytes,
 		imgCachePath: imgCachePath,
-		retryCount:   retryCount}
+		retryCount:   retryCount,
+	}
 
 	imgSize := int64(len(imgBytes))
-	nextSize := imgSize + wb.cm.GetSize()
-	if nextSize > wb.cm.GetCap() {
-		wb.restartChan <- ri
+	nextSize := imgSize + wb.storage.GetSize()
+	if nextSize > wb.storage.GetCap() {
+		wb.sendToRestart(ri)
 		return
 	}
-	wb.cm.AddSize(imgSize)
+
 	tmpFile, err := os.CreateTemp(wb.CacheLibDir, "cached-*.tmp")
 	if err != nil {
-		wb.restartChan <- ri
-		wb.cm.AddSize(-imgSize)
-		wb.errChan <- fmt.Errorf("%s %w", "error creating .tmp file: ", ErrTmpWrite)
+		wb.sendToRestart(ri)
+		wb.sendErr(fmt.Errorf("error creating .tmp file: %w", err))
 		return
 	}
 	tmpName := tmpFile.Name()
 
+	cleanupNeeded := true
 	defer func() {
-		tmpFile.Close()
-		if err != nil {
-			os.Remove(tmpName)
+		if cleanupNeeded {
+			_ = os.Remove(tmpName)
 		}
 	}()
 
-	err = wb.fmu.WriteFile(tmpName, imgBytes)
+	_, err = tmpFile.Write(imgBytes)
+	closeErr := tmpFile.Close()
 	if err != nil {
-		wb.restartChan <- ri
-		wb.cm.AddSize(-imgSize)
-		wb.errChan <- fmt.Errorf("%s %w", tmpName, ErrTmpWrite)
+		wb.sendToRestart(ri)
+		wb.sendErr(fmt.Errorf("%s: %w", tmpName, ErrTmpWrite))
 		return
 	}
-	tmpFile.Close()
+	if closeErr != nil {
+		wb.sendToRestart(ri)
+		wb.sendErr(fmt.Errorf("error closing tmp file: %w", closeErr))
+		return
+	}
+
+	_ = os.Remove(imgCachePath)
+
 	err = os.Rename(tmpName, imgCachePath)
 	if err != nil {
-		wb.errChan <- fmt.Errorf("%s %w", tmpName, ErrTmpRename)
-		err = wb.fmu.Remove(tmpName)
-		if err != nil {
-			wb.errChan <- fmt.Errorf("%s %w", tmpName, ErrTmpRename)
-			return
-		}
-		wb.cm.AddSize(-imgSize)
+		wb.sendErr(fmt.Errorf("%s -> %s: %w", tmpName, imgCachePath, ErrTmpRename))
 		return
 	}
-	wb.fmu.AddFileState(imgCachePath, 0)
+
+	cleanupNeeded = false
+	wb.storage.AddCacheFile(imgCachePath, imgSize)
 }
 
 func (wb *WriteBehind) restarter() {
-	for ri := range wb.restartChan {
+	defer wb.wg.Done()
+	for {
 		select {
 		case <-wb.ctx.Done():
 			return
-		default:
-			if ri.retryCount > MaxRetry {
+		case ri, ok := <-wb.restartChan:
+			if !ok {
+				return
+			}
+			if ri.retryCount >= MaxRetry {
 				continue
 			}
 			imgSize := int64(len(ri.imgBytes))
-			nextSize := imgSize + wb.cm.GetSize()
-			if nextSize > highMark {
-				select {
-				case <-wb.startStop:
-				case <-time.After(MaxWaitTime):
-					continue
-				}
-			}
-			nextSize = imgSize + wb.cm.GetSize()
-			if nextSize > wb.cm.GetCap() {
+			nextSize := imgSize + wb.storage.GetSize()
+			if nextSize > wb.storage.GetCap() {
+				// Если места всё еще нет, откладываем на следующую попытку
 				continue
 			}
-			go wb.lazyWrite(ri.imgBytes, ri.imgCachePath, ri.retryCount+1)
-		}
 
+			wb.wg.Add(1)
+			go func(info *restartInfo) {
+				defer wb.wg.Done()
+				wb.lazyWrite(info.imgBytes, info.imgCachePath, info.retryCount+1)
+			}(ri)
+		}
 	}
 }
 
 func (wb *WriteBehind) Start() {
+	wb.wg.Add(2)
 	go wb.restarter()
 	go wb.ErrLogger()
-
 }
 
 func (wb *WriteBehind) ErrLogger() {
-	for err := range wb.errChan {
-		log.Printf(err.Error())
+	defer wb.wg.Done()
+	for {
+		select {
+		case <-wb.ctx.Done():
+			return
+		case err, ok := <-wb.errChan:
+			if !ok {
+				return
+			}
+			log.Println(err.Error())
+		}
 	}
 }
 
 func (wb *WriteBehind) Stop() {
 	wb.cancel()
+	wb.wg.Wait()
 	close(wb.restartChan)
 	close(wb.errChan)
 }

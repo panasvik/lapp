@@ -1,15 +1,12 @@
 package caching
 
 import (
-	"ImageCacheProject/internal/env"
 	"ImageCacheProject/internal/util"
 	"context"
 	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
-	"strconv"
-	"sync/atomic"
 
 	"github.com/h2non/bimg"
 	"golang.org/x/sync/singleflight"
@@ -19,11 +16,6 @@ var (
 	ErrWrongPhotoType = errors.New("unknown photo type")
 )
 
-const (
-	megabyte = 1024 * 1024
-	initCap  = 16 * megabyte
-)
-
 type lazyCacher interface {
 	Start()
 	LazyWrite(imgBytes []byte, dst string)
@@ -31,27 +23,15 @@ type lazyCacher interface {
 }
 
 type cacheCleaner interface {
-	Start()
 	CleanAll()
-	Stop()
 }
 
-//type usage struct {
-//	lastUsed time.Time
-//	timesUsed int
-//}
-
 type CacheManager struct {
-	//usageMap   map[string]*usage
 	*util.Paths
-	cap          int64
-	size         atomic.Int64
 	cc           cacheCleaner
 	lc           lazyCacher
-	cleanReq     chan<- struct{}
-	fmu          *util.FileMutex
+	storage      *cacheStorage
 	requestGroup singleflight.Group
-	envEM        *env.EventManager
 }
 
 func (c *CacheManager) GetImg(imgName string, ImgType ImageCategory) (string, error) {
@@ -59,19 +39,17 @@ func (c *CacheManager) GetImg(imgName string, ImgType ImageCategory) (string, er
 	if err != nil {
 		return "", fmt.Errorf("error in Options ImgType (%d): %w", ImgType, err)
 	}
-	if !c.fmu.Exists(cachePath) {
-		return "", fmt.Errorf("cache: %w", util.ErrImgNotFound)
+	_, ok := c.storage.get(cachePath)
+	if !ok {
+		return "", ErrNotFound
 	}
-
-	//c.usageMap[imgPath].timesUsed += 1
-	//c.usageMap[imgPath].lastUsed = time.Now()
 	return cachePath, nil
 }
 
 func (c *CacheManager) LoadNGetImg(imgName string, options Options) ([]byte, error) {
 	origImgPath := c.GetOrigPath(imgName)
-
-	res, err, _ := c.requestGroup.Do(origImgPath, func() (any, error) {
+	sfKey := fmt.Sprintf("%s:%d:%d:%d:%d", origImgPath, options.Category, options.BimgOpt.Width, options.BimgOpt.Height, options.BimgOpt.Quality)
+	res, err, _ := c.requestGroup.Do(sfKey, func() (any, error) {
 		return c.loadImg(origImgPath, options)
 	})
 
@@ -93,7 +71,7 @@ func (c *CacheManager) LoadNGetImg(imgName string, options Options) ([]byte, err
 }
 
 func (c *CacheManager) loadImg(origImgPath string, options Options) ([]byte, error) {
-	buffer, err := c.fmu.ReadFile(origImgPath)
+	buffer, err := os.ReadFile(origImgPath)
 	if err != nil {
 		return nil, fmt.Errorf("error reading img: %w", err)
 	}
@@ -106,96 +84,39 @@ func (c *CacheManager) loadImg(origImgPath string, options Options) ([]byte, err
 	return newImage, nil
 }
 
-func (c *CacheManager) AddSize(n int64) {
-	c.size.Add(n)
-	if c.GetSize() > highMark {
-		c.cleanReq <- struct{}{}
-	}
-}
-
-func (c *CacheManager) GetSize() int64 {
-	return c.size.Load()
-}
-
-func (c *CacheManager) GetCap() int64 {
-	return c.cap
-}
-
-func InitCache(ctxP context.Context, fmu *util.FileMutex, p *util.Paths) *CacheManager {
-	cleanChan := make(chan struct{}, 1)
-	startStop := make(chan struct{}, 1)
-
+func InitCache(ctxP context.Context, p *util.Paths) *CacheManager {
+	storage := newCacheStorage()
 	ctx, cancel := context.WithCancel(ctxP)
 	cm := &CacheManager{
-		Paths:    p,
-		cap:      initCap,
-		cleanReq: cleanChan,
-		fmu:      fmu}
-	ce := &cacheEvictor{
-		Paths:     p,
-		ctx:       ctx,
-		cleanReq:  cleanChan,
-		cancel:    cancel,
-		fmu:       fmu,
-		startStop: startStop,
-		cm:        cm}
-
-	wb := &WriteBehind{
-		ctx:         ctx,
-		restartChan: make(chan *restartInfo, 10),
-		cancel:      cancel,
-		errChan:     make(chan error, 10),
-		startStop:   startStop,
-		fmu:         fmu,
-		cm:          cm}
-	cm.cc = ce
-	cm.lc = wb
+		Paths:   p,
+		storage: storage,
+		cc: &cacheEvictor{
+			Paths: p,
+			ctx:   ctx},
+		lc: &WriteBehind{
+			Paths:       p,
+			ctx:         ctx,
+			restartChan: make(chan *restartInfo, 10),
+			cancel:      cancel,
+			errChan:     make(chan error, 10),
+			storage:     storage,
+			limit:       make(chan struct{}, 10)},
+	}
 	return cm
 }
 
 func (c *CacheManager) StartBGProcesses() {
-	c.size.Add(c.populateFmu())
-
-	c.cc.CleanAll()
-	c.cc.Start()
+	//c.cc.CleanAll()
 	c.lc.Start()
 }
 
 func (c *CacheManager) Close() {
 	c.lc.Stop()
-	c.cc.CleanAll()
-	c.cc.Stop()
+	//c.cc.CleanAll()
 }
 
-func (c *CacheManager) LockFile(path string) (err error) {
-	return c.fmu.CacheLockFile(path)
-}
-
-func (c *CacheManager) UnlockFile(path string) {
-	c.fmu.CacheUnlockFile(path)
-}
-
-func (c *CacheManager) populateFmu() int64 {
-	size := int64(0)
-	err := filepath.WalkDir(c.CacheDir, func(path string, d os.DirEntry, err error) error {
-		if err != nil {
-			return err
-		}
-		if d.IsDir() {
-			return nil
-		}
-		info, err := d.Info()
-		if err != nil {
-			return err
-		}
-		c.fmu.AddFileState(path, 0)
-		size += info.Size()
-		return nil
-	})
-	if err != nil {
-		return -1
-	}
-	return size
+func (c *CacheManager) UseFile(path string, r func(path string)) (err error) {
+	return c.storage.UseCacheFile(path, r)
 }
 
 type ImageCategory int
@@ -203,6 +124,7 @@ type ImageCategory int
 const (
 	ManifestImage ImageCategory = 0
 	LibImage      ImageCategory = 1
+	ModalImage    ImageCategory = 2
 )
 
 type Options struct {
@@ -216,26 +138,8 @@ func (c *CacheManager) formImgPath(imgName string, imgType ImageCategory) (strin
 		return filepath.Join(c.CacheManDir, imgName), nil
 	case LibImage:
 		return filepath.Join(c.CacheLibDir, imgName), nil
+	case ModalImage:
+		return filepath.Join(c.CacheModalDir, imgName), nil
 	}
 	return "", ErrWrongPhotoType
 }
-
-func (c *CacheManager) CLICacheSize(ctx context.Context, msgChan chan struct{}) {
-	for {
-		select {
-		case <-ctx.Done():
-			return
-		case <-msgChan:
-			fmt.Println("size: " + strconv.FormatInt(c.size.Load(), 10) + "cap: " + strconv.FormatInt(c.cap, 10))
-			fmt.Println("left: " + strconv.FormatInt(c.cap-c.size.Load(), 10))
-		}
-	}
-}
-
-//options := bimg.Options{
-//	// Width:   800,       // Раскомментируйте, если нужно изменить ширину (сохранит пропорции)
-//	// Height:  600,       // Если указать и Width и Height, картинка обрежется (Crop: true)
-//	Quality:       75,        // Сжатие до 75% (отлично подходит для JPEG/WebP)
-//	Type:          bimg.JPEG, // Принудительно конвертируем на выходе в JPEG
-//	StripMetadata: true,      // Удаляем EXIF-данные (геолокацию, модель камеры), чтобы уменьшить вес
-//}

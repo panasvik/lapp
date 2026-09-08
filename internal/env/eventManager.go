@@ -77,6 +77,10 @@ func (e *EventManager) InitPaths(basePath string) error {
 	if err != nil {
 		return err
 	}
+	err = e.SetEnv("CACHE_MOD_DIR", filepath.Join(basePath, "assets", "cache", "modal"))
+	if err != nil {
+		return err
+	}
 	err = e.SetEnv("UPLOADS_DIR", filepath.Join(basePath, "assets", "uploads"))
 	if err != nil {
 		return err
