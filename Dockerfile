@@ -41,7 +41,7 @@ RUN mkdir -p \
 
 COPY --from=builder /my-app /my-app
 
-COPY --from=builder /app/loveApp.db /loveApp.db
+#COPY --from=builder /app/loveApp.db /loveApp.db
 
 EXPOSE 8080
 

@@ -270,10 +270,12 @@ func (h *HandlerManager) handleSignIn(w http.ResponseWriter, r *http.Request) {
 	userID, err := h.userDB.RegisterNewUser(req.Username, req.Password)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
 	}
 	access, refresh, err := h.auth.authenticator.GetUserTokens(userID)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
 	}
 
 	w.Header().Set("Content-Type", "application/json")

@@ -16,6 +16,8 @@ const (
 	maxDBreq = 10
 )
 
+const dbPath = "/data/loveApp.db"
+
 type AppDB struct {
 	*sql.DB
 	IsOpen atomic.Bool
@@ -23,7 +25,7 @@ type AppDB struct {
 }
 
 func Connect() (*AppDB, error) {
-	db, err := sql.Open("sqlite3", "loveApp.db")
+	db, err := sql.Open("sqlite3", dbPath)
 	if err != nil {
 		return nil, err
 	}
@@ -169,15 +171,15 @@ func (db *AppDB) GetLibsNames(userID int) (names []string, err error) {
 }
 
 func ColdBoot() {
-	err := initAndPopulateImageDB("loveApp.db")
+	err := initAndPopulateImageDB(dbPath)
 	if err != nil {
 		log.Fatalf("Ошибка при работе с БД: %v", err)
 	}
-	err = initTokenTable("loveApp.db")
+	err = initTokenTable(dbPath)
 	if err != nil {
 		log.Fatalf("Ошибка при работе с БД: %v", err)
 	}
-	err = initUserDB("loveApp.db")
+	err = initUserDB(dbPath)
 	if err != nil {
 		log.Fatalf("Ошибка при работе с БД: %v", err)
 	}
