@@ -45,4 +45,5 @@ COPY --from=builder /app/loveApp.db /loveApp.db
 
 EXPOSE 8080
 
-CMD ["/my-app"]
+ENTRYPOINT ["/my-app"]
+CMD []
