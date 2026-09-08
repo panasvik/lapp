@@ -115,7 +115,10 @@ func (h *DBHandler) sendToSubs(e Event) {
 		go func() {
 			s.PushLimit()
 			defer func() { wg.Done(); s.PullLimit() }()
-			h.errChan <- s.ProcessEvent(e)
+			res := s.ProcessEvent(e)
+			if res != nil && res.GetErr() != nil {
+				h.errChan <- res
+			}
 		}()
 	}
 	wg.Wait()
