@@ -1,4 +1,6 @@
-/assets/cache
+/assets/cache/lib
+/assets/cache/manifest
+/assets/cache/modal
 /assets/uploads
 .dockerignore
 Dockerfile

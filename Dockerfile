@@ -1,35 +1,48 @@
-# === Этап 1: Сборка ===
-FROM golang:1.26-alpine AS builder
+# Keep the CGO build and runtime on the same Alpine release.
+ARG ALPINE_VERSION=3.23
+
+FROM golang:1.26-alpine${ALPINE_VERSION} AS builder
 
 WORKDIR /app
 
-# 1. Устанавливаем системные зависимости для CGO (sqlite3 и bimg)
-RUN apk add --no-cache gcc musl-dev pkgconf vips-dev
+RUN apk add --no-cache \
+    ca-certificates \
+    gcc \
+    musl-dev \
+    pkgconf \
+    vips-dev
 
-# 2. Копируем модули и скачиваем зависимости
 COPY go.mod go.sum ./
 RUN go mod download
 
-# 3. Копируем весь остальной код
 COPY . .
 
-# 4. ВАЖНО: Включаем CGO и указываем правильный путь (cmd/app)
+# bimg links against libvips; go-sqlite3 compiles its bundled SQLite via CGO.
 RUN CGO_ENABLED=1 GOOS=linux go build -o /my-app ./cmd/app
 
-# === Этап 2: Финальный образ ===
-FROM alpine:latest
+FROM alpine:${ALPINE_VERSION}
 
 WORKDIR /
 
-# 5. Устанавливаем библиотеку vips, чтобы bimg работал при запуске
-RUN apk add --no-cache vips tzdata
+# HEIC support is a separate libvips module. It pulls in libheif and the
+# libde265 decoder / x265 encoder libraries as dependencies.
+RUN apk add --no-cache \
+    ca-certificates \
+    tzdata \
+    vips \
+    vips-heif
 
-# Копируем готовый бинарник
+# The application uses paths relative to its working directory.
+RUN mkdir -p \
+    /assets/cache/lib \
+    /assets/cache/manifest \
+    /assets/cache/modal \
+    /assets/uploads
+
 COPY --from=builder /my-app /my-app
 
 COPY --from=builder /app/loveApp.db /loveApp.db
 
-# Если сервер использует порт (например, 8080), укажите его:
 EXPOSE 8080
 
 CMD ["/my-app"]
