@@ -1,7 +1,6 @@
 package db
 
 import (
-	"ImageCacheProject/assets"
 	"ImageCacheProject/internal/brocker"
 	"ImageCacheProject/internal/util"
 	"crypto/sha256"
@@ -62,6 +61,36 @@ func (db *AppDB) fastGetNames(targetDate int, userID int) (names []string, err e
 		return nil, ErrNoNames
 	}
 	return names, nil
+}
+
+func (db *AppDB) GetDates(userID int) (dates []int, err error) {
+	query := `
+		SELECT date
+		FROM images
+		WHERE userID = ?`
+	rows, err := db.Query(query, userID)
+
+	if err != nil {
+		return nil, fmt.Errorf("ошибка выполнения запроса: %w", err)
+	}
+
+	defer rows.Close()
+
+	for rows.Next() {
+		var date int
+		if err := rows.Scan(&date); err != nil {
+			return nil, fmt.Errorf("ошибка сканирования строки: %w", err)
+		}
+		dates = append(dates, date)
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("ошибка при чтении результатов: %w", err)
+	}
+	if len(dates) == 0 {
+		return nil, ErrNoNames
+	}
+	return dates, nil
 }
 
 func (db *AppDB) GetNames(targetDate int, userID int) (names []string, err error) {
@@ -192,9 +221,9 @@ func initAndPopulateImageDB(dbPath string) error {
 	}
 	defer stmt.Close()
 
-	data := make(chan assets.RowData, 5)
+	data := make(chan RowData, 5)
 	errChan := make(chan error)
-	go assets.PopulateDB(data, errChan)
+	go PopulateDB(data, errChan)
 	for item := range data {
 		_, err = stmt.Exec(item.UserID, item.Name, item.Date)
 		if err != nil {
@@ -321,7 +350,7 @@ func (db *AppDB) performDBTask(data any, topic brocker.DBTopic) util.Issue {
 		imgd := data.(ImgData)
 		err := db.InsertImage(imgd.Path, imgd.UserID, imgd.Date)
 		if err != nil {
-			return &FileRemove{ErrUpload, imgd.Path, imgd.callback}
+			return &FileRemove{ErrUpload, imgd.Path, imgd.Callback}
 		}
 		return nil
 	case brocker.InsertNewToken:

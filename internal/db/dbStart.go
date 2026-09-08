@@ -1,19 +1,18 @@
-package assets
+package db
 
 import (
 	"embed"
 	"fmt"
 	"io/fs"
-	"log"
+	"os"
 	"path/filepath"
 	"strconv"
+	"time"
 
+	"github.com/evanoberholster/imagemeta"
 	_ "github.com/mattn/go-sqlite3"
 	"github.com/rwcarlsen/goexif/exif"
 )
-
-//go:embed uploads/*
-var assetsFS embed.FS
 
 type RowData struct {
 	UserID int
@@ -29,7 +28,7 @@ func PopulateDB(data chan<- RowData, errChan chan<- error) {
 
 	defer close(data)
 
-	walkErr = fs.WalkDir(assetsFS, "uploads", func(path string, d fs.DirEntry, err error) error {
+	walkErr = filepath.WalkDir("uploads", func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return err
 		}
@@ -38,11 +37,24 @@ func PopulateDB(data chan<- RowData, errChan chan<- error) {
 		}
 
 		userID := 0
-		dateInt, extractErr := extractEXIFDate(assetsFS, path)
-		if extractErr != nil {
-			log.Printf("Предупреждение: не удалось получить EXIF дату для %s: %v. В базу будет записан 0.", path, extractErr)
-			dateInt = 0
+		file, err := os.Open(path)
+		if err != nil {
+			return err
 		}
+		meta, err := imagemeta.Decode(file)
+		var tm time.Time
+		if err == nil {
+			tm = meta.DigitizedDate()
+		} else {
+			tm = time.Now()
+		}
+
+		dateStr := tm.Format("20060102")
+		dateInt, err := strconv.Atoi(dateStr)
+		if err != nil {
+			return err
+		}
+
 		base := filepath.Base(path)
 
 		data <- RowData{UserID: userID, Name: base, Date: dateInt}
@@ -51,28 +63,28 @@ func PopulateDB(data chan<- RowData, errChan chan<- error) {
 	})
 }
 
-// extractEXIFDate читает файл из embed.FS и пытается извлечь дату из EXIF
+// extractEXIFDate reads a file from embed.FS and attempts to extract the date from EXIF metadata.
 func extractEXIFDate(fsys embed.FS, imgPath string) (int, error) {
 	file, err := fsys.Open(imgPath)
 	if err != nil {
-		return 0, fmt.Errorf("ошибка открытия файла: %w", err)
+		return 0, fmt.Errorf("failed to open file: %w", err)
 	}
 	defer file.Close()
 
 	x, err := exif.Decode(file)
 	if err != nil {
-		return 0, fmt.Errorf("EXIF не найден или не читается: %w", err)
+		return 0, fmt.Errorf("EXIF metadata not found or unreadable: %w", err)
 	}
 
 	tm, err := x.DateTime()
 	if err != nil {
-		return 0, fmt.Errorf("тег даты не найден в EXIF: %w", err)
+		return 0, fmt.Errorf("date tag not found in EXIF metadata: %w", err)
 	}
 
 	dateStr := tm.Format("20060102")
 	dateInt, err := strconv.Atoi(dateStr)
 	if err != nil {
-		return 0, fmt.Errorf("ошибка конвертации даты: %w", err)
+		return 0, fmt.Errorf("failed to convert date: %w", err)
 	}
 
 	return dateInt, nil
