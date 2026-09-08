@@ -1,7 +1,7 @@
-/assets/cache/lib
-/assets/cache/manifest
-/assets/cache/modal
-/assets/uploads
+/assets/cache/lib/
+/assets/cache/manifest/
+/assets/cache/modal/
+/assets/uploads/
 .dockerignore
 Dockerfile
 Dockerfile.debug
