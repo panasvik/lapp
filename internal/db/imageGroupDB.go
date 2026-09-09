@@ -39,7 +39,7 @@ func initAndPopulateImageGroupDB(dbPath string) error {
 	defer db.Close()
 
 	createTableSQL := `
-    CREATE TABLE IF NOT EXISTS groups (
+    CREATE TABLE IF NOT EXISTS groupImages (
        groupID INTEGER,
        img_path TEXT,
        date INTEGER
@@ -51,14 +51,14 @@ func initAndPopulateImageGroupDB(dbPath string) error {
 
 	createIndexSQL := `
     CREATE UNIQUE INDEX IF NOT EXISTS idx_images_group_path 
-    ON groups (groupID, img_path);`
+    ON groupImages (groupID, img_path);`
 
 	if _, err := db.Exec(createIndexSQL); err != nil {
 		return fmt.Errorf("не удалось создать уникальный индекс: %w", err)
 	}
 
 	query := `
-    INSERT INTO groups (groupID, img_path, date) 
+    INSERT INTO groupImages (groupID, img_path, date) 
     VALUES (?, ?, ?)
     ON CONFLICT (groupID, img_path) DO NOTHING`
 

@@ -21,7 +21,7 @@ func (db *AppDB) fastGetNames(targetDate int, holderID int, holder ImageHolderTy
 	} else {
 		query = `
 		SELECT img_path
-		FROM groups
+		FROM groupImages
 		WHERE groupID = ? AND date = ?`
 	}
 	rows, err := db.Query(query, holderID, targetDate)
@@ -59,7 +59,7 @@ func (db *AppDB) getDates(holderId int, holder ImageHolderType) (dates []int, er
 	} else {
 		query = `
 		SELECT date
-		FROM groups
+		FROM groupImages
 		WHERE groupID = ?`
 	}
 	rows, err := db.Query(query, holderId)
@@ -113,10 +113,10 @@ func (db *AppDB) getNames(targetDate int, holderID int, holder ImageHolderType) 
 	} else {
 		query = `
 		SELECT img_path 
-		FROM groups 
+		FROM groupImages 
 		WHERE groupID = ? AND date = (
 			SELECT date 
-			FROM groups 
+			FROM groupImages 
 			WHERE groupID = ? 
 			ORDER BY ABS(date - ?) ASC 
 			LIMIT 1
@@ -161,7 +161,7 @@ func (db *AppDB) getLibsNames(holderID int, holder ImageHolderType) (names []str
 	} else {
 		query = `
 		SELECT img_path 
-		FROM groups 
+		FROM groupImages 
 		WHERE groupID = ? 
 		ORDER BY date ASC 
 	`
@@ -172,9 +172,8 @@ func (db *AppDB) getLibsNames(holderID int, holder ImageHolderType) (names []str
 		return nil, fmt.Errorf("error completing request: %w", err)
 	}
 	defer rows.Close()
-
+	var name string
 	for rows.Next() {
-		var name string
 		if err := rows.Scan(&name); err != nil {
 			return nil, fmt.Errorf("error parsing string: %w", err)
 		}
@@ -198,7 +197,7 @@ func (db *AppDB) insertImage(path string, holderID int, holder ImageHolderType, 
 	`
 	} else {
 		query = `
-    	INSERT INTO groups (groupID, img_path, date) 
+    	INSERT INTO groupImages (groupID, img_path, date) 
     	VALUES (?, ?, ?) 
     	ON CONFLICT (groupID, img_path) DO NOTHING
     	`
@@ -213,7 +212,7 @@ func (db *AppDB) NameBelongsToHolder(path string, holder ImageHolderType, holder
 	if holder == User {
 		query = `SELECT * FROM images WHERE img_path = ? AND userID = ?`
 	} else {
-		query = `SELECT * FROM groups WHERE img_path = ? AND groupID = ?`
+		query = `SELECT * FROM groupImages WHERE img_path = ? AND groupID = ?`
 	}
 	rows, err := db.Query(query, path, holderID)
 	if err != nil {

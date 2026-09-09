@@ -265,7 +265,7 @@ func (h *HandlerManager) handleLogIn(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "wrong JSON format", http.StatusBadRequest)
 		return
 	}
-	userID, err := h.userDB.CheckUserPassword(req.Username, req.Password)
+	userID, err := h.userDB.GetUserIDByCredentials(req.Username, req.Password)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusUnauthorized)
 		return

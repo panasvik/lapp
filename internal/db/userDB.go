@@ -20,7 +20,7 @@ var (
 
 type UserDB interface {
 	RegisterNewUser(userName string, password string) (int, error)
-	CheckUserPassword(userName string, password string) (int, error)
+	GetUserIDByCredentials(userName string, password string) (int, error)
 	ProcessEvent(e brocker.Event) util.Issue
 	PushLimit()
 	PullLimit()
@@ -49,6 +49,7 @@ func initUserDB(dbPath string) error {
 	}
 	return nil
 }
+
 func (db *AppDB) RegisterNewUser(userName string, password string) (int, error) {
 	if db.userExists(userName) {
 		return -1, fmt.Errorf("%w by the name of %s", ErrUserAlreadyExists, userName)
@@ -57,11 +58,15 @@ func (db *AppDB) RegisterNewUser(userName string, password string) (int, error) 
 	hash := sha256.Sum256(data)
 	hashString := hex.EncodeToString(hash[:])
 	query := `INSERT INTO users (userName, passwordHash) VALUES (?, ?)`
-	_, err := db.Exec(query, userName, hashString)
+	res, err := db.Exec(query, userName, hashString)
 	if err != nil {
 		return -1, err
 	}
-	return db.CheckUserPassword(userName, password)
+	userID, err := res.LastInsertId()
+	if err != nil {
+		return -1, fmt.Errorf("unable to get userID %w", err)
+	}
+	return int(userID), nil
 }
 
 func (db *AppDB) userExists(userName string) bool {
@@ -71,7 +76,7 @@ func (db *AppDB) userExists(userName string) bool {
 	return err == nil
 }
 
-func (db *AppDB) CheckUserPassword(userName string, password string) (int, error) {
+func (db *AppDB) GetUserIDByCredentials(userName string, password string) (int, error) {
 	data := []byte(password)
 	hash := sha256.Sum256(data)
 	hashString := hex.EncodeToString(hash[:])

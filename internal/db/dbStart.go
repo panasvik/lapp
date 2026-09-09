@@ -1,8 +1,6 @@
 package db
 
 import (
-	"embed"
-	"fmt"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -11,7 +9,6 @@ import (
 
 	"github.com/evanoberholster/imagemeta"
 	_ "github.com/mattn/go-sqlite3"
-	"github.com/rwcarlsen/goexif/exif"
 )
 
 type RowData struct {
@@ -61,31 +58,4 @@ func PopulateDB(data chan<- RowData, errChan chan<- error) {
 
 		return nil
 	})
-}
-
-// extractEXIFDate reads a file from embed.FS and attempts to extract the date from EXIF metadata.
-func extractEXIFDate(fsys embed.FS, imgPath string) (int, error) {
-	file, err := fsys.Open(imgPath)
-	if err != nil {
-		return 0, fmt.Errorf("failed to open file: %w", err)
-	}
-	defer file.Close()
-
-	x, err := exif.Decode(file)
-	if err != nil {
-		return 0, fmt.Errorf("EXIF metadata not found or unreadable: %w", err)
-	}
-
-	tm, err := x.DateTime()
-	if err != nil {
-		return 0, fmt.Errorf("date tag not found in EXIF metadata: %w", err)
-	}
-
-	dateStr := tm.Format("20060102")
-	dateInt, err := strconv.Atoi(dateStr)
-	if err != nil {
-		return 0, fmt.Errorf("failed to convert date: %w", err)
-	}
-
-	return dateInt, nil
 }
