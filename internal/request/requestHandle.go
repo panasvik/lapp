@@ -24,7 +24,6 @@ import (
 type HandlerManager struct {
 	ctx           context.Context
 	imageDB       db.ImageDB
-	tokenDB       db.TokenDB
 	userDB        db.UserDB
 	cacheManager  *caching.CacheManager
 	uploadManager *upload.Manager
@@ -67,8 +66,8 @@ type LogOutReq struct {
 func (h *HandlerManager) subscribeDB() {
 	h.dbHandler.InitDBHandler()
 	h.dbHandler.Subscribe(brocker.InsertNewImage, h.imageDB)
-	h.dbHandler.Subscribe(brocker.RevokeToken, h.tokenDB)
-	h.dbHandler.Subscribe(brocker.InsertNewToken, h.tokenDB)
+	h.dbHandler.Subscribe(brocker.RevokeToken, h.auth.tokenDB)
+	h.dbHandler.Subscribe(brocker.InsertNewToken, h.auth.tokenDB)
 }
 
 func StartReqHandling(srv *http.Server, h *HandlerManager) {
@@ -81,7 +80,7 @@ func StartReqHandling(srv *http.Server, h *HandlerManager) {
 	router.Group(func(r chi.Router) {
 		r.Post("/auth/register", h.handleSignIn)
 		r.Post("/auth/login", h.handleLogIn)
-		r.Post("/auth/refresh", h.handleRefresh)
+		r.Post("/auth/refresh", h.auth.handleRefresh)
 
 	})
 
@@ -128,7 +127,7 @@ func (h *HandlerManager) handleImage(w http.ResponseWriter, r *http.Request) {
 
 	isHolders, err := h.imageDB.NameBelongsToUser(imgName, userID)
 	if !isHolders {
-		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		http.Error(w, "you do not own the image", http.StatusForbidden)
 		return
 	}
 	defer r.Body.Close()
@@ -222,52 +221,6 @@ func (h *HandlerManager) handleUpload(w http.ResponseWriter, r *http.Request) {
 	response := []string{"/uploads/" + header.Filename}
 	json.NewEncoder(w).Encode(response)
 	fmt.Println("net time: " + tNet.String() + " disk time: " + tDisk.String() + " db time: " + tDB.String())
-}
-
-func (h *HandlerManager) handleRefresh(w http.ResponseWriter, r *http.Request) {
-
-	var req RefreshReq
-	defer r.Body.Close()
-
-	err := json.NewDecoder(r.Body).Decode(&req)
-	if err != nil {
-		http.Error(w, "wrong JSON format", http.StatusBadRequest)
-		return
-	}
-
-	dbinfo, err := h.tokenDB.GetRefreshTokenInfo(req.RefreshToken)
-
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusUnauthorized)
-		return
-	}
-
-	if dbinfo.IsRevoked {
-		http.Error(w, "token is revoked", http.StatusUnauthorized)
-		return
-	}
-
-	info, err := h.auth.authenticator.CheckToken(req.RefreshToken)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusUnauthorized)
-		return
-	}
-
-	access, refresh, err := h.auth.authenticator.GetUserTokens(info.UserID)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
-	newRTokenInfo, err := h.auth.authenticator.CheckToken(refresh)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
-	ud := db.TokenData{UserID: newRTokenInfo.UserID, DeviceName: dbinfo.DeviceName, RefreshToken: refresh, Exp: newRTokenInfo.Exp, Iat: newRTokenInfo.Iat}
-	h.dbHandler.Publish(ud, brocker.InsertNewToken)
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusOK)
-	json.NewEncoder(w).Encode(RefreshResp{RefreshToken: refresh, AccessToken: access})
 }
 
 func (h *HandlerManager) handleSignIn(w http.ResponseWriter, r *http.Request) {
@@ -451,7 +404,7 @@ func NewHandler(ctx context.Context, cm *caching.CacheManager, um *upload.Manage
 	auth := NewAuthenticator()
 
 	return &HandlerManager{
-		ctx: ctx, imageDB: ldb, tokenDB: tdb, userDB: udb, cacheManager: cm, uploadManager: um, dbHandler: handler, auth: &authManager{auth}}
+		ctx: ctx, imageDB: ldb, userDB: udb, cacheManager: cm, uploadManager: um, dbHandler: handler, auth: &authManager{auth, tdb, handler}}
 }
 
 func GetImgOptions(r *http.Request) caching.Options {

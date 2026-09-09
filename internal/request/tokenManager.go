@@ -18,9 +18,32 @@ var (
 	ErrInvalidToken   = errors.New("invalid token")
 )
 
+type Role string
+
+func ToString(r Role) string {
+	return string(r)
+}
+
+func ToRole(s string) Role {
+	switch s {
+	case ToString(UserRole):
+		return UserRole
+	case ToString(AdminRole):
+		return AdminRole
+	default:
+		return NoRole
+	}
+}
+
+const (
+	UserRole  Role = "user"
+	AdminRole Role = "admin"
+	NoRole    Role = "unknown"
+)
+
 type TokenInfo struct {
 	UserID int
-	Role   string
+	Role   Role
 	Exp    int64
 	Iat    int64
 }
@@ -29,10 +52,10 @@ type Authenticator struct {
 	key []byte
 }
 
-func (a *Authenticator) GenerateToken(id int, role string, lifetime time.Duration) (string, error) {
+func (a *Authenticator) GenerateToken(id int, role Role, lifetime time.Duration) (string, error) {
 	claims := jwt.MapClaims{
 		"userID": id,
-		"role":   role,
+		"role":   ToString(role),
 		"exp":    time.Now().Add(lifetime).Unix(),
 		"iat":    time.Now().Unix(),
 	}
@@ -43,11 +66,11 @@ func (a *Authenticator) GenerateToken(id int, role string, lifetime time.Duratio
 }
 
 func (a *Authenticator) GetUserTokens(userID int) (string, string, error) {
-	accessToken, err := a.GenerateToken(userID, "user", AccessTokenLiveTime)
+	accessToken, err := a.GenerateToken(userID, UserRole, AccessTokenLiveTime)
 	if err != nil {
 		return "", "", err
 	}
-	refreshToken, err := a.GenerateToken(userID, "user", RefreshTokenLiveTime)
+	refreshToken, err := a.GenerateToken(userID, UserRole, RefreshTokenLiveTime)
 	if err != nil {
 		return "", "", err
 	}
@@ -78,7 +101,7 @@ func (a *Authenticator) CheckToken(token string) (TokenInfo, error) {
 	if err != nil {
 		return TokenInfo{}, err
 	}
-	return TokenInfo{int(claims["userID"].(float64)), claims["role"].(string), int64(claims["exp"].(float64)), int64(claims["iat"].(float64))}, nil
+	return TokenInfo{int(claims["userID"].(float64)), ToRole(claims["role"].(string)), int64(claims["exp"].(float64)), int64(claims["iat"].(float64))}, nil
 }
 
 func NewAuthenticator() *Authenticator {

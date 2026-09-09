@@ -1,7 +1,10 @@
 package request
 
 import (
+	"ImageCacheProject/internal/brocker"
+	"ImageCacheProject/internal/db"
 	"context"
+	"encoding/json"
 	"errors"
 	"net/http"
 	"strings"
@@ -9,21 +12,13 @@ import (
 
 type authManager struct {
 	authenticator *Authenticator
+	tokenDB       db.TokenDB
+	dbHandler     *brocker.DBHandler
 }
 
 type contextKey string
 
 const userIDKey contextKey = "userID"
-
-type Role string
-
-const UserRole Role = "user"
-const AdminRole Role = "admin"
-
-type userInfo struct {
-	userID int
-	role   Role
-}
 
 func ContextWithUserID(ctx context.Context, userID int) context.Context {
 	return context.WithValue(ctx, userIDKey, userID)
@@ -78,4 +73,50 @@ func (a *authManager) AuthMiddleware(next http.Handler) http.Handler {
 		ctx := ContextWithUserID(r.Context(), userID)
 		next.ServeHTTP(w, r.WithContext(ctx))
 	})
+}
+
+func (a *authManager) handleRefresh(w http.ResponseWriter, r *http.Request) {
+
+	var req RefreshReq
+	defer r.Body.Close()
+
+	err := json.NewDecoder(r.Body).Decode(&req)
+	if err != nil {
+		http.Error(w, "wrong JSON format", http.StatusBadRequest)
+		return
+	}
+
+	dbinfo, err := a.tokenDB.GetRefreshTokenInfo(req.RefreshToken)
+
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusUnauthorized)
+		return
+	}
+
+	if dbinfo.IsRevoked {
+		http.Error(w, "token is revoked", http.StatusUnauthorized)
+		return
+	}
+
+	info, err := a.authenticator.CheckToken(req.RefreshToken)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusUnauthorized)
+		return
+	}
+
+	access, refresh, err := a.authenticator.GetUserTokens(info.UserID)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	newRTokenInfo, err := a.authenticator.CheckToken(refresh)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	ud := db.TokenData{UserID: newRTokenInfo.UserID, DeviceName: dbinfo.DeviceName, RefreshToken: refresh, Exp: newRTokenInfo.Exp, Iat: newRTokenInfo.Iat}
+	a.dbHandler.Publish(ud, brocker.InsertNewToken)
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	json.NewEncoder(w).Encode(RefreshResp{RefreshToken: refresh, AccessToken: access})
 }
