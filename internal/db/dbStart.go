@@ -15,9 +15,9 @@ import (
 )
 
 type RowData struct {
-	UserID int
-	Name   string
-	Date   int
+	HolderID int
+	Name     string
+	Date     int
 }
 
 func PopulateDB(data chan<- RowData, errChan chan<- error) {
@@ -57,7 +57,7 @@ func PopulateDB(data chan<- RowData, errChan chan<- error) {
 
 		base := filepath.Base(path)
 
-		data <- RowData{UserID: userID, Name: base, Date: dateInt}
+		data <- RowData{HolderID: userID, Name: base, Date: dateInt}
 
 		return nil
 	})
