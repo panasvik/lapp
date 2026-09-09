@@ -25,7 +25,7 @@ type ImageDB interface {
 	GetNamesUser(targetDate int, userID int) (names []string, err error)
 	GetDatesUser(userID int) (dates []int, err error)
 	GetLibsNamesUser(userID int) (names []string, err error)
-	GetUserIDsByImgName(path string) ([]int, error)
+	NameBelongsToUser(path string, userID int) (bool, error)
 	ProcessEvent(e brocker.Event) util.Issue
 	PushLimit()
 	PullLimit()
@@ -42,14 +42,16 @@ type ImgData struct {
 func (db *AppDB) GetNamesUser(targetDate int, groupID int) (names []string, err error) {
 	return db.getNames(targetDate, groupID, User)
 }
+
 func (db *AppDB) GetDatesUser(groupID int) (dates []int, err error) {
 	return db.getDates(groupID, User)
 }
+
 func (db *AppDB) GetLibsNamesUser(groupID int) (names []string, err error) {
 	return db.getLibsNames(groupID, User)
 }
-func (db *AppDB) GetUserIDsByImgName(path string) ([]int, error) {
-	return db.getHolderIDsByImgName(path, User)
+func (db *AppDB) NameBelongsToUser(path string, userID int) (bool, error) {
+	return db.NameBelongsToHolder(path, User, userID)
 }
 
 func initAndPopulateImageDB(dbPath string) error {

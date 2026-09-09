@@ -208,29 +208,26 @@ func (db *AppDB) insertImage(path string, holderID int, holder ImageHolderType, 
 	return err
 }
 
-func (db *AppDB) getHolderIDsByImgName(path string, holder ImageHolderType) ([]int, error) {
+func (db *AppDB) NameBelongsToHolder(path string, holder ImageHolderType, holderID int) (bool, error) {
 	var query string
 	if holder == User {
-		query = `SELECT userID FROM images WHERE img_path = ?`
+		query = `SELECT * FROM images WHERE img_path = ? AND userID = ?`
 	} else {
-		query = `SELECT groupID FROM groups WHERE img_path = ?`
+		query = `SELECT * FROM groups WHERE img_path = ? AND groupID = ?`
 	}
-	rows, err := db.Query(query, path)
+	rows, err := db.Query(query, path, holderID)
 	if err != nil {
-		return nil, err
+		return false, err
 	}
 	defer rows.Close()
-	var userIDs []int
+	hasName := false
 	for rows.Next() {
-		var userID int
-		if err := rows.Scan(&userID); err != nil {
-			return nil, fmt.Errorf("error parsing string: %w", err)
-		}
-		userIDs = append(userIDs, userID)
+		hasName = true
+		break
 	}
 
 	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("error reading results: %w", err)
+		return false, fmt.Errorf("error reading results: %w", err)
 	}
-	return userIDs, nil
+	return hasName, nil
 }

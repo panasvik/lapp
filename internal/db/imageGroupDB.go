@@ -27,8 +27,8 @@ func (db *AppDB) GetDatesGroup(groupID int) (dates []int, err error) {
 func (db *AppDB) GetLibsNamesGroup(groupID int) (names []string, err error) {
 	return db.getLibsNames(groupID, Group)
 }
-func (db *AppDB) GetGroupIDsByImgName(path string) ([]int, error) {
-	return db.getHolderIDsByImgName(path, Group)
+func (db *AppDB) NameBelongsToGroup(path string, groupID int) (bool, error) {
+	return db.NameBelongsToHolder(path, Group, groupID)
 }
 
 func initAndPopulateImageGroupDB(dbPath string) error {

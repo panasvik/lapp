@@ -83,18 +83,20 @@ func StartReqHandling(srv *http.Server, h *HandlerManager) {
 		r.Post("/auth/login", h.handleLogIn)
 		r.Post("/auth/refresh", h.handleRefresh)
 
-		r.Get("/api/image/*", h.handleImage)
 	})
 
 	router.Group(func(r chi.Router) {
 		r.Use(h.auth.AuthMiddleware)
 
-		r.Post("/api/manifest", h.handleManifest)
-		r.Post("/api/random/manifest", h.handleRandomManifest)
-		r.Get("/api/random/image", h.handleRandomImage)
-		r.Post("/api/library/refresh", h.handleLibRefresh)
-		r.Post("/api/upload/images", h.handleUpload)
+		r.Post("/manifest", h.handleManifest)
+		r.Post("/random/manifest", h.handleRandomManifest)
+		r.Post("/library/refresh", h.handleLibRefresh)
+		r.Post("/upload/images", h.handleUpload)
 		r.Post("/auth/logout", h.handleLogOut)
+
+		r.Get("/image/*", h.handleImage)
+		r.Get("/random/image", h.handleRandomImage)
+
 	})
 
 	srv.Handler = router
@@ -110,6 +112,11 @@ func startListening(srv *http.Server) {
 }
 
 func (h *HandlerManager) handleImage(w http.ResponseWriter, r *http.Request) {
+	userID, ok := UserIDFromContext(r.Context())
+	if !ok {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
 	w.Header().Set("Access-Control-Allow-Origin", "*")
 
 	imgName := chi.URLParam(r, "*")
@@ -119,6 +126,11 @@ func (h *HandlerManager) handleImage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	isHolders, err := h.imageDB.NameBelongsToUser(imgName, userID)
+	if !isHolders {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
 	defer r.Body.Close()
 	cOpt := GetImgOptions(r)
 
