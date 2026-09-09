@@ -16,11 +16,6 @@ var (
 	ErrUpload  = errors.New("unable to upload image")
 )
 
-const (
-	maxDBReq = 10
-	IDargc   = 3
-)
-
 type ImageDB interface {
 	GetNamesUser(targetDate int, userID int) (names []string, err error)
 	GetDatesUser(userID int) (dates []int, err error)

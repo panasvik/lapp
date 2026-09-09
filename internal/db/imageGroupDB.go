@@ -12,7 +12,7 @@ type GroupImageDB interface {
 	GetNamesGroup(targetDate int, groupID int) (names []string, err error)
 	GetDatesGroup(groupID int) (dates []int, err error)
 	GetLibsNamesGroup(groupID int) (names []string, err error)
-	GetGroupIDsByImgName(path string) ([]int, error)
+	NameBelongsToGroup(path string, groupID int) (bool, error)
 	ProcessEvent(e brocker.Event) util.Issue
 	PushLimit()
 	PullLimit()

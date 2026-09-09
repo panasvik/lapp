@@ -12,6 +12,8 @@ import (
 	"golang.org/x/sync/singleflight"
 )
 
+const wLimit = 50
+
 var (
 	ErrWrongPhotoType = errors.New("unknown photo type")
 )
@@ -96,11 +98,11 @@ func InitCache(ctxP context.Context, p *util.Paths) *CacheManager {
 		lc: &WriteBehind{
 			Paths:       p,
 			ctx:         ctx,
-			restartChan: make(chan *restartInfo, 10),
+			restartChan: make(chan *restartInfo, wLimit),
 			cancel:      cancel,
-			errChan:     make(chan error, 10),
+			errChan:     make(chan error, wLimit),
 			storage:     storage,
-			limit:       make(chan struct{}, 10)},
+			limit:       make(chan struct{}, wLimit)},
 	}
 	return cm
 }

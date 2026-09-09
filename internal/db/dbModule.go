@@ -10,7 +10,7 @@ import (
 )
 
 const (
-	maxDBreq = 10
+	maxDBReq = 50
 )
 
 const dbPath = "/data/loveApp.db"
