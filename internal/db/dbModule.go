@@ -98,7 +98,7 @@ func (db *AppDB) performDBTask(data any, topic brocker.DBTopic) util.Issue {
 	switch topic {
 	case brocker.InsertNewImage:
 		imgd := data.(ImgData)
-		err := db.InsertImage(imgd.Path, imgd.UserID, imgd.Date)
+		err := db.insertImage(imgd.Path, imgd.HolderID, imgd.Holder, imgd.Date)
 		if err != nil {
 			return &FileRemove{ErrUpload, imgd.Path, imgd.Callback}
 		}

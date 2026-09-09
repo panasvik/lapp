@@ -164,7 +164,7 @@ func (h *HandlerManager) handleManifest(w http.ResponseWriter, r *http.Request) 
 	}
 	defer r.Body.Close()
 
-	imgPaths, err := h.imageDB.GetNames(req.Date, userID)
+	imgPaths, err := h.imageDB.GetNamesUser(req.Date, userID)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -201,7 +201,7 @@ func (h *HandlerManager) handleUpload(w http.ResponseWriter, r *http.Request) {
 
 	clientDate := extractDate(r)
 	imgName := filepath.Base(path)
-	img := db.ImgData{UserID: userID, Path: imgName, Date: clientDate, Callback: callback}
+	img := db.ImgData{HolderID: userID, Holder: db.User, Path: imgName, Date: clientDate, Callback: callback}
 	h.dbHandler.Publish(img, brocker.InsertNewImage)
 	tDB := time.Since(t2)
 	w.Header().Set("Content-Type", "application/json")
@@ -352,7 +352,7 @@ func (h *HandlerManager) handleLibRefresh(w http.ResponseWriter, r *http.Request
 		http.Error(w, "unauthorized", http.StatusUnauthorized)
 		return
 	}
-	imgNames, err := h.imageDB.GetLibsNames(userID)
+	imgNames, err := h.imageDB.GetLibsNamesUser(userID)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -376,13 +376,13 @@ func (h *HandlerManager) handleRandomManifest(w http.ResponseWriter, r *http.Req
 
 	defer r.Body.Close()
 
-	dates, err := h.imageDB.GetDates(userID)
+	dates, err := h.imageDB.GetDatesUser(userID)
 	if err != nil {
 		http.Error(w, "user has no photos", http.StatusBadRequest)
 		return
 	}
 	date := dates[rand.N(len(dates))]
-	imgPaths, err := h.imageDB.GetNames(date, userID)
+	imgPaths, err := h.imageDB.GetNamesUser(date, userID)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -405,7 +405,7 @@ func (h *HandlerManager) handleRandomImage(w http.ResponseWriter, r *http.Reques
 	defer r.Body.Close()
 	cOpt := GetImgOptions(r)
 
-	imgNames, err := h.imageDB.GetLibsNames(userID)
+	imgNames, err := h.imageDB.GetLibsNamesUser(userID)
 	if err != nil {
 		http.Error(w, "user has no photos", http.StatusBadRequest)
 		return

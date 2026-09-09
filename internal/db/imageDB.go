@@ -32,7 +32,8 @@ type ImageDB interface {
 }
 
 type ImgData struct {
-	UserID   int
+	HolderID int
+	Holder   ImageHolderType
 	Path     string
 	Date     int
 	Callback func() error
