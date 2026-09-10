@@ -8,3 +8,4 @@ Dockerfile.debug
 /cmd/app/DBBuilder.exe
 app.log
 main.exe
+.env

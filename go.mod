@@ -13,6 +13,7 @@ require (
 
 require (
 	github.com/evanoberholster/imagemeta v1.0.0 // indirect
+	github.com/joho/godotenv v1.5.1 // indirect
 	github.com/philhofer/fwd v1.2.0 // indirect
 	github.com/pkg/errors v0.9.1 // indirect
 	github.com/tinylib/msgp v1.6.3 // indirect

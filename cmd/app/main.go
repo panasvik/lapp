@@ -4,7 +4,6 @@ import (
 	"ImageCacheProject/internal/brocker"
 	"ImageCacheProject/internal/caching"
 	"ImageCacheProject/internal/db"
-	"ImageCacheProject/internal/env"
 	"ImageCacheProject/internal/request"
 	"ImageCacheProject/internal/upload"
 	"ImageCacheProject/internal/util"
@@ -19,6 +18,8 @@ import (
 	"os/signal"
 	"syscall"
 	"time"
+
+	"github.com/joho/godotenv"
 )
 
 func main() {
@@ -44,18 +45,20 @@ func main() {
 		}
 	}()
 
-	eem := env.NewEventManager()
-	paths := util.Paths{}
-	cacheManager := caching.InitCache(ctx, &paths)
-	eem.Attach(&paths, "CACHE_DIR")
-	eem.Attach(&paths, "CACHE_MAN_DIR")
-	eem.Attach(&paths, "CACHE_LIB_DIR")
-	eem.Attach(&paths, "CACHE_MOD_DIR")
-	eem.Attach(&paths, "UPLOADS_DIR")
+	cacheDir := os.Getenv("CACHE_DIR")
+	cacheLibDir := os.Getenv("CACHE_LIB_DIR")
+	cacheManDir := os.Getenv("CACHE_MAN_DIR")
+	cacheModDir := os.Getenv("CACHE_MOD_DIR")
+	uploadsDir := os.Getenv("UPLOADS_DIR")
+	paths := util.Paths{OriginalsDir: uploadsDir, CacheDir: cacheDir, CacheModalDir: cacheModDir, CacheLibDir: cacheLibDir, CacheManDir: cacheManDir}
 
+	cacheManager := caching.InitCache(ctx, &paths)
+	err = godotenv.Load()
+	if err != nil {
+		slog.Error(".env file was not found")
+	}
 	uploadManager := upload.NewManager(&paths)
 
-	err = eem.InitPaths(".")
 	if err != nil {
 		panic(err)
 	}
