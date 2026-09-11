@@ -1,37 +1,15 @@
 package db
 
 import (
+	"ImageCacheProject/internal/brocker"
+	"ImageCacheProject/internal/util"
 	"database/sql"
 	"fmt"
 	"time"
 )
 
-type MsgType int
-
-const (
-	Invitation MsgType = 0
-	Rejection  MsgType = 1
-	Consent    MsgType = 2
-)
-
-type MsgStatus int
-
-const (
-	Acquired  MsgStatus = 0
-	Sent      MsgStatus = 1
-	Delivered MsgStatus = 2
-	Read      MsgStatus = 3
-)
-
-type Message struct {
-	messageID   int
-	senderID    int
-	recipientID int
-	groupID     int
-	msgType     MsgType
-	content     string
-	createdAt   int64 //Unix timestamp
-	status      MsgStatus
+type MessageDB struct {
+	*AppDB
 }
 
 func initMessagesDB(dbPath string) error {
@@ -59,9 +37,9 @@ func initMessagesDB(dbPath string) error {
 }
 
 // addNewMessage: m.messageID is ignored when adding a message
-func (db *AppDB) addNewMessage(m Message) (int, error) {
+func (db *MessageDB) AddNewMessage(m util.Message) (int, error) {
 	query := `INSERT INTO messages (senderID, recipientID, groupID, msgType, content, createdAt, status) VALUES ($1, $2, $3, $4, $5, $6, $7)`
-	res, err := db.Exec(query, m.senderID, m.recipientID, m.groupID, m.msgType, m.content, m.createdAt, m.status)
+	res, err := db.Exec(query, m.SenderID, m.RecipientID, m.GroupID, m.MsgType, m.Content, m.CreatedAt, m.Status)
 	if err != nil {
 		return -1, err
 	}
@@ -72,14 +50,40 @@ func (db *AppDB) addNewMessage(m Message) (int, error) {
 	return int(groupID), nil
 }
 
-func FormNewMessage(senderID int, recipientID int, groupID int, msgType MsgType, content string) Message {
+func FormNewMessage(senderID int, recipientID int, groupID int, msgType util.MsgType, content string) util.Message {
 	createdAt := time.Now().Unix()
-	status := Acquired
-	return Message{senderID: senderID, recipientID: recipientID, groupID: groupID, msgType: msgType, content: content, createdAt: createdAt, status: status}
+	status := util.Acquired
+	return util.Message{SenderID: senderID, RecipientID: recipientID, GroupID: groupID, MsgType: msgType, Content: content, CreatedAt: createdAt, Status: status}
 }
 
-func (db *AppDB) changeMsgStatus(messageID int, status MsgStatus) error {
+func (db *MessageDB) changeMsgStatus(messageID int, status util.MsgStatus) error {
 	query := `UPDATE messages SET status = ?  WHERE messageID = ?`
 	_, err := db.Exec(query, status, messageID)
 	return err
+}
+
+func (db *MessageDB) ProcessEvent(e brocker.Event) util.Issue {
+	datablob := e.GetData()
+	if datablob == nil {
+		return &ErrIssue{brocker.ErrNoDataInEvent, ""}
+	}
+	switch e.GetTopic() {
+	case brocker.ChangeMessageStatus:
+		{
+			data, ok := datablob.(util.Message)
+			if !ok {
+				return &ErrIssue{err: ErrConversion, desc: fmt.Sprintf("unable to convert %s to UserGroup", e.GetData())}
+			}
+			err := db.changeMsgStatus(data.MessageID, data.Status)
+			if err != nil {
+				return &ErrIssue{err: err, desc: "unable to change message status"}
+			}
+		}
+	default:
+		return &ErrIssue{
+			err: ErrWrongTopic,
+			desc: fmt.Sprintf("sent topic: %d, expected %d or %d",
+				e.GetTopic(), brocker.AddUserToGroup, brocker.RemoveUserFromGroup)}
+	}
+	return nil
 }

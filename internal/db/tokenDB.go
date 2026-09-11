@@ -14,20 +14,8 @@ const (
 	TDargc = 5
 )
 
-type TokenDB interface {
-	GetRefreshTokenInfo(refreshToken string) (TokenData, error)
-	ProcessEvent(e brocker.Event) util.Issue
-	PushLimit()
-	PullLimit()
-}
-
-type TokenData struct {
-	UserID       int
-	DeviceName   string
-	RefreshToken string
-	Exp          int64
-	Iat          int64
-	IsRevoked    bool
+type TokenDB struct {
+	*AppDB
 }
 
 func initTokenTable(dbPath string) error {
@@ -53,21 +41,21 @@ func initTokenTable(dbPath string) error {
 	return nil
 }
 
-func (db *AppDB) InsertRefreshToken(userID int, deviceName string, refreshToken string, exp int64, iat int64, isRevoked bool) error {
+func (db *TokenDB) InsertRefreshToken(userID int, deviceName string, refreshToken string, exp int64, iat int64, isRevoked bool) error {
 	data := []byte(refreshToken)
 	hash := sha256.Sum256(data)
 	hashString := hex.EncodeToString(hash[:])
 	query := `INSERT INTO refresh_tokens (userID, deviceName,tokenHash, exp, iat, isRevoked) VALUES (?, ?, ?, ?, ?, ?)`
-	_, err := db.Exec(query, userID, deviceName, hashString, exp, iat, convertBoolToInt(isRevoked))
+	_, err := db.Exec(query, userID, deviceName, hashString, exp, iat, util.ConvertBoolToInt(isRevoked))
 	return err
 }
 
-func (db *AppDB) GetRefreshTokenInfo(refreshToken string) (TokenData, error) {
+func (db *TokenDB) GetRefreshTokenInfo(refreshToken string) (util.TokenData, error) {
 	data := []byte(refreshToken)
 	hash := sha256.Sum256(data)
 	hashString := hex.EncodeToString(hash[:])
 	query := `SELECT rowID, userID, deviceName, tokenHash, exp, iat, isRevoked FROM refresh_tokens WHERE tokenHash = ?`
-	var token TokenData
+	var token util.TokenData
 	var rowID int
 	err := db.QueryRow(query, hashString).Scan(
 		&rowID,
@@ -81,13 +69,13 @@ func (db *AppDB) GetRefreshTokenInfo(refreshToken string) (TokenData, error) {
 		//if errors.Is(err, sql.ErrNoRows) {
 		//	return TokenData{}, ErrTokenNotFound
 		//}
-		return TokenData{}, err
+		return util.TokenData{}, err
 	}
 	if expired(token.Exp) {
 		query := `UPDATE refresh_tokens SET isRevoked  = 1 WHERE rowID = ?`
 		_, err := db.Exec(query, rowID)
 		if err != nil {
-			return TokenData{}, err
+			return util.TokenData{}, err
 		}
 	}
 	return token, nil
@@ -95,4 +83,40 @@ func (db *AppDB) GetRefreshTokenInfo(refreshToken string) (TokenData, error) {
 
 func expired(exp int64) bool {
 	return exp < time.Now().Unix()
+}
+
+func (db *TokenDB) LogOutUser(userID int, deviceName string) error {
+	query := `UPDATE refresh_tokens SET isRevoked  = 1 WHERE userID = ? AND deviceName = ?`
+	_, err := db.Exec(query, userID, deviceName)
+	return err
+}
+
+func (db *TokenDB) ProcessEvent(e brocker.Event) util.Issue {
+	data := e.GetData()
+	switch e.GetTopic() {
+	case brocker.InsertNewToken:
+		tokenD, ok := data.(util.TokenData)
+		if !ok {
+			return &ErrIssue{err: ErrConversion, desc: fmt.Sprintf("unable to convert %s to TokenData", e.GetData())}
+		}
+		err := db.InsertRefreshToken(tokenD.UserID, tokenD.DeviceName, tokenD.RefreshToken, tokenD.Exp, tokenD.Iat, tokenD.IsRevoked)
+		if err != nil {
+			return &ErrIssue{err, "unable to insert refresh token"}
+		}
+	case brocker.RevokeToken:
+		logout, ok := data.(util.UserLogOut)
+		if !ok {
+			return &ErrIssue{err: ErrConversion, desc: fmt.Sprintf("unable to convert %s to UserLogOut", e.GetData())}
+		}
+		err := db.LogOutUser(logout.UserID, logout.DeviceName)
+		if err != nil {
+			return &ErrIssue{err, "unable to make logout changes in db"}
+		}
+	default:
+		return &ErrIssue{
+			err: ErrWrongTopic,
+			desc: fmt.Sprintf("sent topic: %d, expected %d or %d",
+				e.GetTopic(), brocker.InsertNewToken, brocker.RevokeToken)}
+	}
+	return nil
 }

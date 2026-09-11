@@ -21,15 +21,14 @@ var (
 
 type DBTopic int
 
-func (d *DBTopic) GetIntValue() int {
-	return int(*d)
-}
-
 const (
-	InsertNewToken = DBTopic(0)
-	RevokeToken    = DBTopic(1)
-	InsertNewImage = DBTopic(2)
-	RemoveImage    = DBTopic(3)
+	InsertNewToken      DBTopic = 0
+	RevokeToken         DBTopic = 1
+	InsertNewImage      DBTopic = 2
+	RemoveImage         DBTopic = 3
+	AddUserToGroup      DBTopic = 4
+	RemoveUserFromGroup DBTopic = 5
+	ChangeMessageStatus DBTopic = 6
 )
 
 type Event struct {

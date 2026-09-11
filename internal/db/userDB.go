@@ -1,8 +1,6 @@
 package db
 
 import (
-	"ImageCacheProject/internal/brocker"
-	"ImageCacheProject/internal/util"
 	"crypto/sha256"
 	"database/sql"
 	"encoding/hex"
@@ -18,17 +16,8 @@ var (
 	ErrUserAlreadyExists = errors.New("user already exists")
 )
 
-type UserDB interface {
-	RegisterNewUser(userName string, password string) (int, error)
-	GetUserIDByCredentials(userName string, password string) (int, error)
-	ProcessEvent(e brocker.Event) util.Issue
-	PushLimit()
-	PullLimit()
-}
-
-type UserLogOut struct {
-	UserID     int
-	DeviceName string
+type UserDB struct {
+	*AppDB
 }
 
 func initUserDB(dbPath string) error {
@@ -50,7 +39,7 @@ func initUserDB(dbPath string) error {
 	return nil
 }
 
-func (db *AppDB) RegisterNewUser(userName string, password string) (int, error) {
+func (db *UserDB) RegisterNewUser(userName string, password string) (int, error) {
 	if db.userExists(userName) {
 		return -1, fmt.Errorf("%w by the name of %s", ErrUserAlreadyExists, userName)
 	}
@@ -69,14 +58,14 @@ func (db *AppDB) RegisterNewUser(userName string, password string) (int, error) 
 	return int(userID), nil
 }
 
-func (db *AppDB) userExists(userName string) bool {
+func (db *UserDB) userExists(userName string) bool {
 	query := `SELECT userID FROM users WHERE userName = ?`
 	var userID int
 	err := db.QueryRow(query, userName).Scan(&userID)
 	return err == nil
 }
 
-func (db *AppDB) GetUserIDByCredentials(userName string, password string) (int, error) {
+func (db *UserDB) GetUserIDByCredentials(userName string, password string) (int, error) {
 	data := []byte(password)
 	hash := sha256.Sum256(data)
 	hashString := hex.EncodeToString(hash[:])
@@ -84,10 +73,4 @@ func (db *AppDB) GetUserIDByCredentials(userName string, password string) (int, 
 	var userID int
 	err := db.QueryRow(query, userName, hashString).Scan(&userID)
 	return userID, err
-}
-
-func (db *AppDB) LogOutUser(userID int, deviceName string) error {
-	query := `UPDATE refresh_tokens SET isRevoked  = 1 WHERE userID = ? AND deviceName = ?`
-	_, err := db.Exec(query, userID, deviceName)
-	return err
 }

@@ -3,8 +3,8 @@ package request
 import (
 	"ImageCacheProject/internal/brocker"
 	"ImageCacheProject/internal/caching"
-	"ImageCacheProject/internal/db"
 	"ImageCacheProject/internal/upload"
+	"ImageCacheProject/internal/util"
 	"context"
 	"encoding/json"
 	"errors"
@@ -23,9 +23,8 @@ import (
 
 type HandlerManager struct {
 	ctx           context.Context
-	imageDB       db.ImageDB
-	userDB        db.UserDB
 	cacheManager  *caching.CacheManager
+	db            DBModule
 	uploadManager *upload.Manager
 	dbHandler     *brocker.DBHandler
 	auth          *authManager
@@ -65,9 +64,13 @@ type LogOutReq struct {
 
 func (h *HandlerManager) subscribeDB() {
 	h.dbHandler.InitDBHandler()
-	h.dbHandler.Subscribe(brocker.InsertNewImage, h.imageDB)
-	h.dbHandler.Subscribe(brocker.RevokeToken, h.auth.tokenDB)
-	h.dbHandler.Subscribe(brocker.InsertNewToken, h.auth.tokenDB)
+	h.dbHandler.Subscribe(brocker.InsertNewToken, h.db)
+	h.dbHandler.Subscribe(brocker.RevokeToken, h.db)
+	h.dbHandler.Subscribe(brocker.InsertNewImage, h.db)
+	h.dbHandler.Subscribe(brocker.RemoveImage, h.db)
+	h.dbHandler.Subscribe(brocker.AddUserToGroup, h.db)
+	h.dbHandler.Subscribe(brocker.RemoveUserFromGroup, h.db)
+	h.dbHandler.Subscribe(brocker.ChangeMessageStatus, h.db)
 }
 
 func StartReqHandling(srv *http.Server, h *HandlerManager) {
@@ -125,7 +128,7 @@ func (h *HandlerManager) handleImage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	isHolders, err := h.imageDB.NameBelongsToUser(imgName, userID)
+	isHolders, err := h.db.NameBelongsToUser(imgName, userID)
 	if !isHolders {
 		http.Error(w, "you do not own the image", http.StatusForbidden)
 		return
@@ -175,7 +178,7 @@ func (h *HandlerManager) handleManifest(w http.ResponseWriter, r *http.Request) 
 	}
 	defer r.Body.Close()
 
-	imgPaths, err := h.imageDB.GetNamesUser(req.Date, userID)
+	imgPaths, err := h.db.GetNamesUser(req.Date, userID)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -212,7 +215,7 @@ func (h *HandlerManager) handleUpload(w http.ResponseWriter, r *http.Request) {
 
 	clientDate := extractDate(r)
 	imgName := filepath.Base(path)
-	img := db.ImgData{HolderID: userID, Holder: db.User, Path: imgName, Date: clientDate, Callback: callback}
+	img := util.ImgData{HolderID: userID, Holder: util.User, Path: imgName, Date: clientDate, Callback: callback}
 	h.dbHandler.Publish(img, brocker.InsertNewImage)
 	tDB := time.Since(t2)
 	w.Header().Set("Content-Type", "application/json")
@@ -232,7 +235,7 @@ func (h *HandlerManager) handleSignIn(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "wrong JSON format", http.StatusBadRequest)
 		return
 	}
-	userID, err := h.userDB.RegisterNewUser(req.Username, req.Password)
+	userID, err := h.db.RegisterNewUser(req.Username, req.Password)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
@@ -250,7 +253,7 @@ func (h *HandlerManager) handleSignIn(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	rData := db.TokenData{UserID: userID, DeviceName: req.DeviceName, RefreshToken: refresh, Exp: rInfo.Exp, Iat: rInfo.Iat, IsRevoked: false}
+	rData := util.TokenData{UserID: userID, DeviceName: req.DeviceName, RefreshToken: refresh, Exp: rInfo.Exp, Iat: rInfo.Iat, IsRevoked: false}
 	h.dbHandler.Publish(rData, brocker.InsertNewToken)
 	json.NewEncoder(w).Encode(RefreshResp{AccessToken: access, RefreshToken: refresh})
 
@@ -265,7 +268,7 @@ func (h *HandlerManager) handleLogIn(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "wrong JSON format", http.StatusBadRequest)
 		return
 	}
-	userID, err := h.userDB.GetUserIDByCredentials(req.Username, req.Password)
+	userID, err := h.db.GetUserIDByCredentials(req.Username, req.Password)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusUnauthorized)
 		return
@@ -282,7 +285,7 @@ func (h *HandlerManager) handleLogIn(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	rData := db.TokenData{UserID: userID, DeviceName: req.DeviceName, RefreshToken: refresh, Exp: rInfo.Exp, Iat: rInfo.Iat, IsRevoked: false}
+	rData := util.TokenData{UserID: userID, DeviceName: req.DeviceName, RefreshToken: refresh, Exp: rInfo.Exp, Iat: rInfo.Iat, IsRevoked: false}
 	h.dbHandler.Publish(rData, brocker.InsertNewToken)
 
 	w.Header().Set("Content-Type", "application/json")
@@ -305,7 +308,7 @@ func (h *HandlerManager) handleLogOut(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "wrong JSON format", http.StatusBadRequest)
 		return
 	}
-	logoutInfo := db.UserLogOut{UserID: userID, DeviceName: req.DeviceName}
+	logoutInfo := util.UserLogOut{UserID: userID, DeviceName: req.DeviceName}
 	h.dbHandler.Publish(logoutInfo, brocker.RevokeToken)
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
@@ -317,7 +320,7 @@ func (h *HandlerManager) handleLibRefresh(w http.ResponseWriter, r *http.Request
 		http.Error(w, "unauthorized", http.StatusUnauthorized)
 		return
 	}
-	imgNames, err := h.imageDB.GetLibsNamesUser(userID)
+	imgNames, err := h.db.GetLibsNamesUser(userID)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -341,13 +344,13 @@ func (h *HandlerManager) handleRandomManifest(w http.ResponseWriter, r *http.Req
 
 	defer r.Body.Close()
 
-	dates, err := h.imageDB.GetDatesUser(userID)
+	dates, err := h.db.GetDatesUser(userID)
 	if err != nil {
 		http.Error(w, "user has no photos", http.StatusBadRequest)
 		return
 	}
 	date := dates[rand.N(len(dates))]
-	imgPaths, err := h.imageDB.GetNamesUser(date, userID)
+	imgPaths, err := h.db.GetNamesUser(date, userID)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -370,7 +373,7 @@ func (h *HandlerManager) handleRandomImage(w http.ResponseWriter, r *http.Reques
 	defer r.Body.Close()
 	cOpt := GetImgOptions(r)
 
-	imgNames, err := h.imageDB.GetLibsNamesUser(userID)
+	imgNames, err := h.db.GetLibsNamesUser(userID)
 	if err != nil {
 		http.Error(w, "user has no photos", http.StatusBadRequest)
 		return
@@ -400,11 +403,11 @@ func (h *HandlerManager) handleRandomImage(w http.ResponseWriter, r *http.Reques
 	}
 }
 
-func NewHandler(ctx context.Context, cm *caching.CacheManager, um *upload.Manager, handler *brocker.DBHandler, tdb db.TokenDB, ldb db.ImageDB, udb db.UserDB) *HandlerManager {
+func NewHandler(ctx context.Context, cm *caching.CacheManager, um *upload.Manager, db DBModule, handler *brocker.DBHandler) *HandlerManager {
 	auth := NewAuthenticator()
 
 	return &HandlerManager{
-		ctx: ctx, imageDB: ldb, userDB: udb, cacheManager: cm, uploadManager: um, dbHandler: handler, auth: &authManager{auth, tdb, handler}}
+		ctx: ctx, cacheManager: cm, uploadManager: um, db: db, dbHandler: handler, auth: &authManager{auth, db.TokenDB, handler}}
 }
 
 func GetImgOptions(r *http.Request) caching.Options {

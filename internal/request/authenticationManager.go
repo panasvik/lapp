@@ -2,7 +2,7 @@ package request
 
 import (
 	"ImageCacheProject/internal/brocker"
-	"ImageCacheProject/internal/db"
+	"ImageCacheProject/internal/util"
 	"context"
 	"encoding/json"
 	"errors"
@@ -12,7 +12,7 @@ import (
 
 type authManager struct {
 	authenticator *Authenticator
-	tokenDB       db.TokenDB
+	tokenDB       TokenDB
 	dbHandler     *brocker.DBHandler
 }
 
@@ -114,7 +114,7 @@ func (a *authManager) handleRefresh(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	ud := db.TokenData{UserID: newRTokenInfo.UserID, DeviceName: dbinfo.DeviceName, RefreshToken: refresh, Exp: newRTokenInfo.Exp, Iat: newRTokenInfo.Iat}
+	ud := util.TokenData{UserID: newRTokenInfo.UserID, DeviceName: dbinfo.DeviceName, RefreshToken: refresh, Exp: newRTokenInfo.Exp, Iat: newRTokenInfo.Iat}
 	a.dbHandler.Publish(ud, brocker.InsertNewToken)
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)

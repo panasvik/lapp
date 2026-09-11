@@ -1,34 +1,27 @@
 package db
 
 import (
-	"ImageCacheProject/internal/brocker"
 	"ImageCacheProject/internal/util"
 	"database/sql"
 	"fmt"
 	"log"
 )
 
-type GroupImageDB interface {
-	GetNamesGroup(targetDate int, groupID int) (names []string, err error)
-	GetDatesGroup(groupID int) (dates []int, err error)
-	GetLibsNamesGroup(groupID int) (names []string, err error)
-	NameBelongsToGroup(path string, groupID int) (bool, error)
-	ProcessEvent(e brocker.Event) util.Issue
-	PushLimit()
-	PullLimit()
+type ImageGroupDB struct {
+	*ImageDB
 }
 
-func (db *AppDB) GetNamesGroup(targetDate int, groupID int) (names []string, err error) {
-	return db.getNames(targetDate, groupID, Group)
+func (db *ImageGroupDB) GetNamesGroup(targetDate int, groupID int) (names []string, err error) {
+	return db.getNames(targetDate, groupID, util.Group)
 }
-func (db *AppDB) GetDatesGroup(groupID int) (dates []int, err error) {
-	return db.getDates(groupID, Group)
+func (db *ImageGroupDB) GetDatesGroup(groupID int) (dates []int, err error) {
+	return db.getDates(groupID, util.Group)
 }
-func (db *AppDB) GetLibsNamesGroup(groupID int) (names []string, err error) {
-	return db.getLibsNames(groupID, Group)
+func (db *ImageGroupDB) GetLibsNamesGroup(groupID int) (names []string, err error) {
+	return db.getLibsNames(groupID, util.Group)
 }
-func (db *AppDB) NameBelongsToGroup(path string, groupID int) (bool, error) {
-	return db.NameBelongsToHolder(path, Group, groupID)
+func (db *ImageGroupDB) NameBelongsToGroup(path string, groupID int) (bool, error) {
+	return db.NameBelongsToHolder(path, util.Group, groupID)
 }
 
 func initAndPopulateImageGroupDB(dbPath string) error {

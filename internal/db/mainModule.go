@@ -1,9 +1,8 @@
 package db
 
 import (
-	"ImageCacheProject/internal/brocker"
-	"ImageCacheProject/internal/util"
 	"database/sql"
+	"errors"
 	"fmt"
 	"log"
 	"sync/atomic"
@@ -11,6 +10,11 @@ import (
 
 const (
 	maxDBReq = 50
+)
+
+var (
+	ErrConversion = errors.New("unable to convert data type")
+	ErrWrongTopic = errors.New("send data from wrong topic")
 )
 
 const dbPath = "/data/loveApp.db"
@@ -83,51 +87,10 @@ func (f *FileRemove) GetFixCallback() func() error {
 	return f.callback
 }
 
-func convertBoolToInt(b bool) int {
-	switch b {
-	case true:
-		return 1
-	case false:
-		return 0
-	default:
-		return -1
-	}
-}
-
-func (db *AppDB) performDBTask(data any, topic brocker.DBTopic) util.Issue {
-	switch topic {
-	case brocker.InsertNewImage:
-		imgd := data.(ImgData)
-		err := db.insertImage(imgd.Path, imgd.HolderID, imgd.Holder, imgd.Date)
-		if err != nil {
-			return &FileRemove{ErrUpload, imgd.Path, imgd.Callback}
-		}
-		return nil
-	case brocker.InsertNewToken:
-		userd := data.(TokenData)
-		err := db.InsertRefreshToken(userd.UserID, userd.DeviceName, userd.RefreshToken, userd.Exp, userd.Iat, userd.IsRevoked)
-		return &ErrIssue{err, ""}
-	case brocker.RevokeToken:
-		logout := data.(UserLogOut)
-		err := db.LogOutUser(logout.UserID, logout.DeviceName)
-		return &ErrIssue{err, ""}
-
-	}
-	return &ErrIssue{brocker.ErrUnknownDBTopic, "unable to form userData"}
-}
-
 func (db *AppDB) PushLimit() {
 	db.limit <- struct{}{}
 }
 
 func (db *AppDB) PullLimit() {
 	<-db.limit
-}
-
-func (db *AppDB) ProcessEvent(e brocker.Event) util.Issue {
-	data := e.GetData()
-	if data == nil {
-		return &ErrIssue{brocker.ErrNoDataInEvent, ""}
-	}
-	return db.performDBTask(data, e.GetTopic())
 }

@@ -1,19 +1,18 @@
 package db
 
 import (
+	"ImageCacheProject/internal/brocker"
+	"ImageCacheProject/internal/util"
 	"fmt"
 )
 
-type ImageHolderType int
+type ImageDB struct {
+	*AppDB
+}
 
-const (
-	User  = ImageHolderType(0)
-	Group = ImageHolderType(1)
-)
-
-func (db *AppDB) fastGetNames(targetDate int, holderID int, holder ImageHolderType) (names []string, err error) {
+func (db *ImageDB) fastGetNames(targetDate int, holderID int, holder util.ImageHolderType) (names []string, err error) {
 	var query string
-	if holder == User {
+	if holder == util.User {
 		query = `
 		SELECT img_path
 		FROM images
@@ -49,9 +48,9 @@ func (db *AppDB) fastGetNames(targetDate int, holderID int, holder ImageHolderTy
 	return names, nil
 }
 
-func (db *AppDB) getDates(holderId int, holder ImageHolderType) (dates []int, err error) {
+func (db *ImageDB) getDates(holderId int, holder util.ImageHolderType) (dates []int, err error) {
 	var query string
-	if holder == User {
+	if holder == util.User {
 		query = `
 		SELECT date
 		FROM images
@@ -87,7 +86,7 @@ func (db *AppDB) getDates(holderId int, holder ImageHolderType) (dates []int, er
 	return dates, nil
 }
 
-func (db *AppDB) getNames(targetDate int, holderID int, holder ImageHolderType) (names []string, err error) {
+func (db *ImageDB) getNames(targetDate int, holderID int, holder util.ImageHolderType) (names []string, err error) {
 	if !db.IsOpen.Load() {
 		return nil, fmt.Errorf("DataBase is closed")
 	}
@@ -98,7 +97,7 @@ func (db *AppDB) getNames(targetDate int, holderID int, holder ImageHolderType) 
 	}
 
 	var query string
-	if holder == User {
+	if holder == util.User {
 		query = `
 		SELECT img_path 
 		FROM images 
@@ -145,13 +144,13 @@ func (db *AppDB) getNames(targetDate int, holderID int, holder ImageHolderType) 
 	return names, nil
 }
 
-func (db *AppDB) getLibsNames(holderID int, holder ImageHolderType) (names []string, err error) {
+func (db *ImageDB) getLibsNames(holderID int, holder util.ImageHolderType) (names []string, err error) {
 	if !db.IsOpen.Load() {
 		return nil, fmt.Errorf("DataBase is closed")
 	}
 
 	var query string
-	if holder == User {
+	if holder == util.User {
 		query = `
 		SELECT img_path 
 		FROM images 
@@ -187,9 +186,9 @@ func (db *AppDB) getLibsNames(holderID int, holder ImageHolderType) (names []str
 	return names, nil
 }
 
-func (db *AppDB) insertImage(path string, holderID int, holder ImageHolderType, date int) error {
+func (db *ImageDB) insertImage(path string, holderID int, holder util.ImageHolderType, date int) error {
 	var query string
-	if holder == User {
+	if holder == util.User {
 		query = `
     	INSERT INTO images (userID, img_path, date) 
     	VALUES (?, ?, ?) 
@@ -207,9 +206,9 @@ func (db *AppDB) insertImage(path string, holderID int, holder ImageHolderType, 
 	return err
 }
 
-func (db *AppDB) NameBelongsToHolder(path string, holder ImageHolderType, holderID int) (bool, error) {
+func (db *ImageDB) NameBelongsToHolder(path string, holder util.ImageHolderType, holderID int) (bool, error) {
 	var query string
-	if holder == User {
+	if holder == util.User {
 		query = `SELECT * FROM images WHERE img_path = ? AND userID = ?`
 	} else {
 		query = `SELECT * FROM groupImages WHERE img_path = ? AND groupID = ?`
@@ -229,4 +228,35 @@ func (db *AppDB) NameBelongsToHolder(path string, holder ImageHolderType, holder
 		return false, fmt.Errorf("error reading results: %w", err)
 	}
 	return hasName, nil
+}
+
+func (db *ImageDB) ProcessEvent(e brocker.Event) util.Issue {
+	data := e.GetData()
+	switch e.GetTopic() {
+	case brocker.InsertNewImage:
+		imgd, ok := data.(util.ImgData)
+		if !ok {
+			return &ErrIssue{err: ErrConversion, desc: fmt.Sprintf("unable to convert %s to ImgData", e.GetData())}
+		}
+		err := db.insertImage(imgd.Path, imgd.HolderID, imgd.Holder, imgd.Date)
+		if err != nil {
+			return &FileRemove{ErrUpload, imgd.Path, imgd.Callback}
+		}
+	case brocker.RemoveImage:
+		imgd, ok := data.(util.ImgData)
+		if !ok {
+			return &ErrIssue{err: ErrConversion, desc: fmt.Sprintf("unable to convert %s to ImgData", e.GetData())}
+		}
+		_ = imgd
+		//removing image
+		//if err != nil {
+		//	return &FileRemove{ErrUpload, imgd.Path, imgd.Callback}
+		//}
+	default:
+		return &ErrIssue{
+			err: ErrWrongTopic,
+			desc: fmt.Sprintf("sent topic: %d, expected %d or %d",
+				e.GetTopic(), brocker.InsertNewImage, brocker.RemoveImage)}
+	}
+	return nil
 }
