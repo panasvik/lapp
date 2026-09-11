@@ -15,8 +15,6 @@ var (
 type GroupDB interface {
 	RegisterNewGroup(groupName string, creatorID int) (int, error)
 	GetGroupUsersID(groupID int) ([]int, error)
-	AddUserToGroup(groupID int, userID int, role string) error
-	RemoveUserFromGroup(groupID int, userID int) error
 	ProcessEvent(e brocker.Event) util.Issue
 	PushLimit()
 	PullLimit()
@@ -89,13 +87,13 @@ func (db *AppDB) GetGroupUsersID(groupID int) ([]int, error) {
 	return userIDs, nil
 }
 
-func (db *AppDB) AddUserToGroup(groupID int, userID int, role string) error {
+func (db *AppDB) addUserToGroup(groupID int, userID int, role string) error {
 	query := `INSERT INTO groupUsers (groupID, userID, role) VALUES ($1, $2, $3)`
 	_, err := db.Exec(query, groupID, userID, role)
 	return err
 }
 
-func (db *AppDB) RemoveUserFromGroup(groupID int, userID int) error {
+func (db *AppDB) removeUserFromGroup(groupID int, userID int) error {
 	query := `DELETE FROM groupUsers WHERE groupID = ? and userID = ?`
 	_, err := db.Exec(query, groupID, userID)
 	return err
