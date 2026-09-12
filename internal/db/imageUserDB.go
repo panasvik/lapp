@@ -30,14 +30,14 @@ func (db *ImageUserDB) GetDatesUser(groupID int) (dates []int, err error) {
 func (db *ImageUserDB) GetLibsNamesUser(groupID int) (names []string, err error) {
 	return db.getLibsNames(groupID, util.User)
 }
-func (db *ImageUserDB) NameBelongsToUser(path string, userID int) (bool, error) {
+func (db *ImageUserDB) ImageBelongsToUser(path string, userID int) (bool, error) {
 	return db.NameBelongsToHolder(path, util.User, userID)
 }
 
 func initAndPopulateImageDB(dbPath string) error {
 	db, err := sql.Open("sqlite3", dbPath)
 	if err != nil {
-		return fmt.Errorf("не удалось открыть image бд: %w", err)
+		return fmt.Errorf("не удалось открыть image user бд: %w", err)
 	}
 	defer db.Close()
 

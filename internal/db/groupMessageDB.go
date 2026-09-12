@@ -5,7 +5,6 @@ import (
 	"ImageCacheProject/internal/util"
 	"database/sql"
 	"fmt"
-	"time"
 )
 
 type MessageDB struct {
@@ -15,7 +14,7 @@ type MessageDB struct {
 func initMessagesDB(dbPath string) error {
 	db, err := sql.Open("sqlite3", dbPath)
 	if err != nil {
-		return fmt.Errorf("не удалось открыть user бд: %w", err)
+		return fmt.Errorf("не удалось открыть message бд: %w", err)
 	}
 	defer db.Close()
 
@@ -50,10 +49,32 @@ func (db *MessageDB) AddNewMessage(m util.Message) (int, error) {
 	return int(groupID), nil
 }
 
-func FormNewMessage(senderID int, recipientID int, groupID int, msgType util.MsgType, content string) util.Message {
-	createdAt := time.Now().Unix()
-	status := util.Acquired
-	return util.Message{SenderID: senderID, RecipientID: recipientID, GroupID: groupID, MsgType: msgType, Content: content, CreatedAt: createdAt, Status: status}
+func (db *MessageDB) GetUnreadMessages(recipientID int) ([]util.Message, error) {
+	query := `SELECT * from messages WHERE recipientID = ?`
+	rows, err := db.Query(query, recipientID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var messages []util.Message
+	var rowErr error
+	for rows.Next() {
+		var message util.Message
+		rowErr = rows.Scan(&message.MessageID,
+			&message.SenderID,
+			&message.RecipientID,
+			&message.GroupID,
+			&message.MsgType,
+			&message.Content,
+			&message.CreatedAt,
+			&message.Status)
+		if rowErr != nil {
+			err = rowErr
+			continue
+		}
+		messages = append(messages, message)
+	}
+	return messages, err
 }
 
 func (db *MessageDB) changeMsgStatus(messageID int, status util.MsgStatus) error {
@@ -63,27 +84,41 @@ func (db *MessageDB) changeMsgStatus(messageID int, status util.MsgStatus) error
 }
 
 func (db *MessageDB) ProcessEvent(e brocker.Event) util.Issue {
-	datablob := e.GetData()
+	datablob := e.Body
 	if datablob == nil {
-		return &ErrIssue{brocker.ErrNoDataInEvent, ""}
+		return &util.ErrIssue{brocker.ErrNoDataInEvent, ""}
 	}
-	switch e.GetTopic() {
+	switch e.Topic {
+	case brocker.AddMessage:
+		{
+			data, ok := datablob.(util.Message)
+			if !ok {
+				return &util.ErrIssue{Err: brocker.ErrConversion, Desc: fmt.Sprintf("unable to convert %s to UserGroup", e.Body)}
+			}
+			msgID, err := db.AddNewMessage(data)
+			if err != nil {
+				return &util.ErrIssue{Err: err, Desc: "unable to add message"}
+			}
+			data.MessageID = msgID
+			e.Forward(data, brocker.SendMessage)
+		}
 	case brocker.ChangeMessageStatus:
 		{
 			data, ok := datablob.(util.Message)
 			if !ok {
-				return &ErrIssue{err: ErrConversion, desc: fmt.Sprintf("unable to convert %s to UserGroup", e.GetData())}
+				return &util.ErrIssue{Err: brocker.ErrConversion, Desc: fmt.Sprintf("unable to convert %s to UserGroup", e.Body)}
 			}
 			err := db.changeMsgStatus(data.MessageID, data.Status)
 			if err != nil {
-				return &ErrIssue{err: err, desc: "unable to change message status"}
+				return &util.ErrIssue{Err: err, Desc: "unable to change message status"}
 			}
 		}
+
 	default:
-		return &ErrIssue{
-			err: ErrWrongTopic,
-			desc: fmt.Sprintf("sent topic: %d, expected %d or %d",
-				e.GetTopic(), brocker.AddUserToGroup, brocker.RemoveUserFromGroup)}
+		return &util.ErrIssue{
+			Err: brocker.ErrWrongTopic,
+			Desc: fmt.Sprintf("sent topic: %d, expected %d or %d",
+				e.Topic, brocker.AddMessage, brocker.ChangeMessageStatus)}
 	}
 	return nil
 }

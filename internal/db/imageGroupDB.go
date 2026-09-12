@@ -20,14 +20,14 @@ func (db *ImageGroupDB) GetDatesGroup(groupID int) (dates []int, err error) {
 func (db *ImageGroupDB) GetLibsNamesGroup(groupID int) (names []string, err error) {
 	return db.getLibsNames(groupID, util.Group)
 }
-func (db *ImageGroupDB) NameBelongsToGroup(path string, groupID int) (bool, error) {
+func (db *ImageGroupDB) ImageBelongsToGroup(path string, groupID int) (bool, error) {
 	return db.NameBelongsToHolder(path, util.Group, groupID)
 }
 
 func initAndPopulateImageGroupDB(dbPath string) error {
 	db, err := sql.Open("sqlite3", dbPath)
 	if err != nil {
-		return fmt.Errorf("не удалось открыть image бд: %w", err)
+		return fmt.Errorf("не удалось открыть image group бд: %w", err)
 	}
 	defer db.Close()
 

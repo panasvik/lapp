@@ -17,23 +17,29 @@ const (
 var (
 	ErrUnknownDBTopic = errors.New("unknown topic")
 	ErrNoDataInEvent  = errors.New("event has no Stringer data")
+	ErrConversion     = errors.New("unable to convert data type")
+	ErrWrongTopic     = errors.New("send data from wrong topic")
 )
 
-type DBTopic int
+type Topic int
 
 const (
-	InsertNewToken      DBTopic = 0
-	RevokeToken         DBTopic = 1
-	InsertNewImage      DBTopic = 2
-	RemoveImage         DBTopic = 3
-	AddUserToGroup      DBTopic = 4
-	RemoveUserFromGroup DBTopic = 5
-	ChangeMessageStatus DBTopic = 6
+	InsertNewToken      Topic = 0
+	RevokeToken         Topic = 1
+	InsertNewImage      Topic = 2
+	RemoveImage         Topic = 3
+	AddUserToGroup      Topic = 4
+	RemoveUserFromGroup Topic = 5
+	AddMessage          Topic = 6
+	ChangeMessageStatus Topic = 7
+	SendMessage         Topic = 8
+	InsertNewDevice     Topic = 9
 )
 
 type Event struct {
-	topic DBTopic
-	data  any
+	Topic   Topic
+	Body    any
+	Forward func(data any, topic Topic)
 }
 
 type Subscriber interface {
@@ -42,17 +48,18 @@ type Subscriber interface {
 	PullLimit()
 }
 
-type DBHandler struct {
+type Handler struct {
+	subMu     sync.RWMutex
 	inChan    chan Event
 	eventBus  chan Event
 	q         *util.LinkedQueue[Event]
 	isRunning atomic.Bool
 	ctx       context.Context
-	subs      map[DBTopic][]Subscriber
+	subs      map[Topic][]Subscriber
 	errChan   chan<- util.Issue
 }
 
-func (h *DBHandler) runPipe() {
+func (h *Handler) runPipe() {
 	h.isRunning.Store(true)
 	defer h.isRunning.Store(false)
 
@@ -83,12 +90,12 @@ func (h *DBHandler) runPipe() {
 	}
 }
 
-func (h *DBHandler) Publish(s any, topic DBTopic) {
-	e := convertToEvent(s, topic)
+func (h *Handler) Publish(body any, topic Topic) {
+	e := h.convertToEvent(body, topic)
 	h.inChan <- e
 }
 
-func (h *DBHandler) sender() {
+func (h *Handler) sender() {
 	for {
 		select {
 		case <-h.ctx.Done():
@@ -102,57 +109,55 @@ func (h *DBHandler) sender() {
 	}
 }
 
-func (h *DBHandler) sendToSubs(e Event) {
-	topic := e.topic
-	topicSubs := h.subs[topic]
-	if topicSubs == nil {
-		return
-	}
+func (h *Handler) sendToSubs(e Event) {
+	topic := e.Topic
+	h.subMu.RLock()
 	var wg sync.WaitGroup
-	for _, s := range topicSubs {
-		wg.Add(1)
-		go func() {
-			s.PushLimit()
-			defer func() { wg.Done(); s.PullLimit() }()
-			res := s.ProcessEvent(e)
-			if res != nil && res.GetErr() != nil {
-				h.errChan <- res
-			}
-		}()
-	}
+	func() {
+		defer h.subMu.RUnlock()
+		topicSubs := h.subs[topic]
+		if topicSubs == nil {
+			return
+		}
+		for _, s := range topicSubs {
+			wg.Add(1)
+			go func() {
+				s.PushLimit()
+				defer func() { wg.Done(); s.PullLimit() }()
+				res := s.ProcessEvent(e)
+				if res != nil && res.GetErr() != nil {
+					h.errChan <- res
+				}
+			}()
+		}
+	}()
 	wg.Wait()
 }
 
-func NewDBHandler(ctx context.Context, errChan chan<- util.Issue) *DBHandler {
-	return &DBHandler{
+func NewDBHandler(ctx context.Context, errChan chan<- util.Issue) *Handler {
+	return &Handler{
 		inChan:   make(chan Event, maxChanCap),
 		eventBus: make(chan Event, maxChanCap),
 		q:        util.NewQueue[Event](),
 		ctx:      ctx,
-		subs:     make(map[DBTopic][]Subscriber),
+		subs:     make(map[Topic][]Subscriber),
 		errChan:  errChan}
 
 }
 
-func (h *DBHandler) InitDBHandler() {
+func (h *Handler) InitDBHandler() {
 	go h.runPipe()
 	go h.sender()
 }
 
-func (h *DBHandler) Subscribe(topic DBTopic, s Subscriber) {
+func (h *Handler) Subscribe(topic Topic, s Subscriber) {
+	h.subMu.Lock()
+	defer h.subMu.Unlock()
 	topicSubs := h.subs[topic]
 	topicSubs = append(topicSubs, s)
 	h.subs[topic] = topicSubs
 }
 
-func convertToEvent(s any, topic DBTopic) Event {
-	return Event{topic, s}
-}
-
-func (e *Event) GetTopic() DBTopic {
-	return e.topic
-}
-
-func (e *Event) GetData() any {
-	return e.data
+func (h *Handler) convertToEvent(s any, topic Topic) Event {
+	return Event{topic, s, h.Publish}
 }

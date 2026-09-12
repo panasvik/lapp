@@ -92,31 +92,31 @@ func (db *TokenDB) LogOutUser(userID int, deviceName string) error {
 }
 
 func (db *TokenDB) ProcessEvent(e brocker.Event) util.Issue {
-	data := e.GetData()
-	switch e.GetTopic() {
+	data := e.Body
+	switch e.Topic {
 	case brocker.InsertNewToken:
 		tokenD, ok := data.(util.TokenData)
 		if !ok {
-			return &ErrIssue{err: ErrConversion, desc: fmt.Sprintf("unable to convert %s to TokenData", e.GetData())}
+			return &util.ErrIssue{Err: brocker.ErrConversion, Desc: fmt.Sprintf("unable to convert %s to TokenData", e.Body)}
 		}
 		err := db.InsertRefreshToken(tokenD.UserID, tokenD.DeviceName, tokenD.RefreshToken, tokenD.Exp, tokenD.Iat, tokenD.IsRevoked)
 		if err != nil {
-			return &ErrIssue{err, "unable to insert refresh token"}
+			return &util.ErrIssue{err, "unable to insert refresh token"}
 		}
 	case brocker.RevokeToken:
 		logout, ok := data.(util.UserLogOut)
 		if !ok {
-			return &ErrIssue{err: ErrConversion, desc: fmt.Sprintf("unable to convert %s to UserLogOut", e.GetData())}
+			return &util.ErrIssue{Err: brocker.ErrConversion, Desc: fmt.Sprintf("unable to convert %s to UserLogOut", e.Body)}
 		}
 		err := db.LogOutUser(logout.UserID, logout.DeviceName)
 		if err != nil {
-			return &ErrIssue{err, "unable to make logout changes in db"}
+			return &util.ErrIssue{err, "unable to make logout changes in db"}
 		}
 	default:
-		return &ErrIssue{
-			err: ErrWrongTopic,
-			desc: fmt.Sprintf("sent topic: %d, expected %d or %d",
-				e.GetTopic(), brocker.InsertNewToken, brocker.RevokeToken)}
+		return &util.ErrIssue{
+			Err: brocker.ErrWrongTopic,
+			Desc: fmt.Sprintf("sent topic: %d, expected %d or %d",
+				e.Topic, brocker.InsertNewToken, brocker.RevokeToken)}
 	}
 	return nil
 }

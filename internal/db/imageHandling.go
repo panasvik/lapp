@@ -231,21 +231,21 @@ func (db *ImageDB) NameBelongsToHolder(path string, holder util.ImageHolderType,
 }
 
 func (db *ImageDB) ProcessEvent(e brocker.Event) util.Issue {
-	data := e.GetData()
-	switch e.GetTopic() {
+	data := e.Body
+	switch e.Topic {
 	case brocker.InsertNewImage:
 		imgd, ok := data.(util.ImgData)
 		if !ok {
-			return &ErrIssue{err: ErrConversion, desc: fmt.Sprintf("unable to convert %s to ImgData", e.GetData())}
+			return &util.ErrIssue{Err: brocker.ErrConversion, Desc: fmt.Sprintf("unable to convert %s to ImgData", e.Body)}
 		}
 		err := db.insertImage(imgd.Path, imgd.HolderID, imgd.Holder, imgd.Date)
 		if err != nil {
-			return &FileRemove{ErrUpload, imgd.Path, imgd.Callback}
+			return &util.FileRemove{ErrUpload, imgd.Path, imgd.Callback}
 		}
 	case brocker.RemoveImage:
 		imgd, ok := data.(util.ImgData)
 		if !ok {
-			return &ErrIssue{err: ErrConversion, desc: fmt.Sprintf("unable to convert %s to ImgData", e.GetData())}
+			return &util.ErrIssue{Err: brocker.ErrConversion, Desc: fmt.Sprintf("unable to convert %s to ImgData", e.Body)}
 		}
 		_ = imgd
 		//removing image
@@ -253,10 +253,10 @@ func (db *ImageDB) ProcessEvent(e brocker.Event) util.Issue {
 		//	return &FileRemove{ErrUpload, imgd.Path, imgd.Callback}
 		//}
 	default:
-		return &ErrIssue{
-			err: ErrWrongTopic,
-			desc: fmt.Sprintf("sent topic: %d, expected %d or %d",
-				e.GetTopic(), brocker.InsertNewImage, brocker.RemoveImage)}
+		return &util.ErrIssue{
+			Err: brocker.ErrWrongTopic,
+			Desc: fmt.Sprintf("sent topic: %d, expected %d or %d",
+				e.Topic, brocker.InsertNewImage, brocker.RemoveImage)}
 	}
 	return nil
 }

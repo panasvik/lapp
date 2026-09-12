@@ -19,7 +19,7 @@ type GroupDB struct {
 func initGroupDB(dbPath string) error {
 	db, err := sql.Open("sqlite3", dbPath)
 	if err != nil {
-		return fmt.Errorf("не удалось открыть user бд: %w", err)
+		return fmt.Errorf("не удалось открыть group бд: %w", err)
 	}
 	defer db.Close()
 
@@ -61,7 +61,7 @@ func (db *GroupDB) RegisterNewGroup(groupName string, creatorID int) (int, error
 	return int(groupID), nil
 }
 
-func (db *GroupDB) GetGroupUsersID(groupID int) ([]int, error) {
+func (db *GroupDB) GetGroupUserIDs(groupID int) ([]int, error) {
 	query := `SELECT userID FROM groupUsers WHERE groupID = ?`
 	rows, err := db.Query(query, groupID)
 	if err != nil {
@@ -103,38 +103,38 @@ func (db *GroupDB) groupExists(groupName string) bool {
 }
 
 func (db *GroupDB) ProcessEvent(e brocker.Event) util.Issue {
-	datablob := e.GetData()
+	datablob := e.Body
 	if datablob == nil {
-		return &ErrIssue{brocker.ErrNoDataInEvent, ""}
+		return &util.ErrIssue{brocker.ErrNoDataInEvent, ""}
 	}
-	switch e.GetTopic() {
+	switch e.Topic {
 	case brocker.AddUserToGroup:
 		{
 			data, ok := datablob.(util.UserGroup)
 			if !ok {
-				return &ErrIssue{err: ErrConversion, desc: fmt.Sprintf("unable to convert %s to UserGroup", e.GetData())}
+				return &util.ErrIssue{Err: brocker.ErrConversion, Desc: fmt.Sprintf("unable to convert %s to UserGroup", e.Body)}
 			}
 			err := db.addUserToGroup(data.GroupID, data.UserID, data.Role)
 			if err != nil {
-				return &ErrIssue{err: err, desc: ""}
+				return &util.ErrIssue{Err: err, Desc: ""}
 			}
 		}
 	case brocker.RemoveUserFromGroup:
 		{
 			data, ok := datablob.(util.UserGroup)
 			if !ok {
-				return &ErrIssue{err: ErrConversion, desc: fmt.Sprintf("unable to convert %s to UserGroup", e.GetData())}
+				return &util.ErrIssue{Err: brocker.ErrConversion, Desc: fmt.Sprintf("unable to convert %s to UserGroup", e.Body)}
 			}
 			err := db.removeUserFromGroup(data.GroupID, data.UserID)
 			if err != nil {
-				return &ErrIssue{err: err, desc: ""}
+				return &util.ErrIssue{Err: err, Desc: ""}
 			}
 		}
 	default:
-		return &ErrIssue{
-			err: ErrWrongTopic,
-			desc: fmt.Sprintf("sent topic: %d, expected %d or %d",
-				e.GetTopic(), brocker.AddUserToGroup, brocker.RemoveUserFromGroup)}
+		return &util.ErrIssue{
+			Err: brocker.ErrWrongTopic,
+			Desc: fmt.Sprintf("sent topic: %d, expected %d or %d",
+				e.Topic, brocker.AddUserToGroup, brocker.RemoveUserFromGroup)}
 	}
 	return nil
 }
