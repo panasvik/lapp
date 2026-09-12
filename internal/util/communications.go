@@ -1,11 +1,17 @@
 package util
 
+import (
+	"fmt"
+	"time"
+)
+
 type MsgType int
 
 const (
 	Invitation MsgType = 0
 	Rejection  MsgType = 1
 	Consent    MsgType = 2
+	LibUpdate  MsgType = 3
 )
 
 type MsgStatus int
@@ -18,14 +24,20 @@ const (
 )
 
 type Message struct {
-	MessageID   int
-	SenderID    int
-	RecipientID int
-	GroupID     int
-	MsgType     MsgType
-	Content     string
-	CreatedAt   int64 //Unix timestamp
-	Status      MsgStatus
+	MessageID   int       `json:"msgID"`
+	SenderID    int       `json:"senderID"`
+	RecipientID int       `json:"recipientID"`
+	GroupID     int       `json:"groupID"`
+	MsgType     MsgType   `json:"MsgType"`
+	Content     string    `json:"content"`
+	CreatedAt   int64     `json:"CreatedAt"` //Unix timestamp
+	Status      MsgStatus `json:"status"`
+}
+
+func FormNewMessage(senderID int, recipientID int, groupID int, msgType MsgType, content string) Message {
+	createdAt := time.Now().Unix()
+	status := Acquired
+	return Message{SenderID: senderID, RecipientID: recipientID, GroupID: groupID, MsgType: msgType, Content: content, CreatedAt: createdAt, Status: status}
 }
 
 type ImageHolderType int
@@ -61,4 +73,36 @@ type UserGroup struct {
 	UserID  int
 	GroupID int
 	Role    string
+}
+
+type UserDevice struct {
+	UserID int
+	Device string
+	OS     string
+}
+
+func (t *MsgType) Scan(value interface{}) error {
+	if value == nil {
+		*t = 0
+		return nil
+	}
+
+	if i, ok := value.(int64); ok {
+		*t = MsgType(i)
+		return nil
+	}
+	return fmt.Errorf("cannot scan %T into topic", value)
+}
+
+func (s *MsgStatus) Scan(value interface{}) error {
+	if value == nil {
+		*s = 0
+		return nil
+	}
+
+	if i, ok := value.(int64); ok {
+		*s = MsgStatus(i)
+		return nil
+	}
+	return fmt.Errorf("cannot scan %T into topic", value)
 }
