@@ -2,7 +2,6 @@ package db
 
 import (
 	"database/sql"
-	"errors"
 	"fmt"
 	"log"
 	"sync/atomic"
@@ -10,11 +9,6 @@ import (
 
 const (
 	maxDBReq = 50
-)
-
-var (
-	ErrConversion = errors.New("unable to convert data type")
-	ErrWrongTopic = errors.New("send data from wrong topic")
 )
 
 const dbPath = "/data/loveApp.db"
@@ -49,42 +43,23 @@ func ColdBoot() {
 	if err != nil {
 		log.Fatalf("Ошибка при работе с БД: %v", err)
 	}
+	err = initAndPopulateImageGroupDB(dbPath)
+	if err != nil {
+		log.Fatalf("Ошибка при работе с БД: %v", err)
+	}
+	err = initGroupDB(dbPath)
+	if err != nil {
+		log.Fatalf("Ошибка при работе с БД: %v", err)
+	}
+	err = initMessagesDB(dbPath)
+	if err != nil {
+		log.Fatalf("Ошибка при работе с БД: %v", err)
+	}
+	err = initWBSubDB(dbPath)
+	if err != nil {
+		log.Fatalf("Ошибка при работе с БД: %v", err)
+	}
 	fmt.Println("База данных успешно создана и заполнена!")
-}
-
-type ErrIssue struct {
-	err  error
-	desc string
-}
-
-func (e *ErrIssue) GetErr() error {
-	return e.err
-}
-
-func (e *ErrIssue) GetBody() string {
-	return e.desc
-}
-
-func (e *ErrIssue) GetFixCallback() func() error {
-	return nil
-}
-
-type FileRemove struct {
-	err      error
-	fileName string
-	callback func() error
-}
-
-func (f *FileRemove) GetErr() error {
-	return f.err
-}
-
-func (f *FileRemove) GetBody() string {
-	return f.fileName
-}
-
-func (f *FileRemove) GetFixCallback() func() error {
-	return f.callback
 }
 
 func (db *AppDB) PushLimit() {

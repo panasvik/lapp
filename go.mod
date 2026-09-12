@@ -12,9 +12,11 @@ require (
 )
 
 require (
+	github.com/SherClockHolmes/webpush-go v1.4.0 // indirect
 	github.com/evanoberholster/imagemeta v1.0.0 // indirect
 	github.com/joho/godotenv v1.5.1 // indirect
 	github.com/philhofer/fwd v1.2.0 // indirect
 	github.com/pkg/errors v0.9.1 // indirect
 	github.com/tinylib/msgp v1.6.3 // indirect
+	golang.org/x/crypto v0.31.0 // indirect
 )

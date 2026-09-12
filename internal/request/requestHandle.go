@@ -11,22 +11,19 @@ import (
 	"fmt"
 	"math/rand/v2"
 	"net/http"
-	"net/url"
 	"path/filepath"
-	"strconv"
 	"time"
 
 	"github.com/go-chi/chi/v5"
 	chimiddleware "github.com/go-chi/chi/v5/middleware"
-	"github.com/h2non/bimg"
 )
 
 type HandlerManager struct {
 	ctx           context.Context
 	cacheManager  *caching.CacheManager
-	db            DBModule
+	db            *DBModule
 	uploadManager *upload.Manager
-	dbHandler     *brocker.DBHandler
+	dbHandler     *brocker.Handler
 	auth          *authManager
 }
 
@@ -47,6 +44,7 @@ type LogInReq struct {
 	Username   string `json:"username"`
 	Password   string `json:"password"`
 	DeviceName string `json:"DeviceName"`
+	OS         string `json:"OS"`
 }
 
 type RefreshReq struct {
@@ -62,19 +60,7 @@ type LogOutReq struct {
 	DeviceName string `json:"DeviceName"`
 }
 
-func (h *HandlerManager) subscribeDB() {
-	h.dbHandler.InitDBHandler()
-	h.dbHandler.Subscribe(brocker.InsertNewToken, h.db)
-	h.dbHandler.Subscribe(brocker.RevokeToken, h.db)
-	h.dbHandler.Subscribe(brocker.InsertNewImage, h.db)
-	h.dbHandler.Subscribe(brocker.RemoveImage, h.db)
-	h.dbHandler.Subscribe(brocker.AddUserToGroup, h.db)
-	h.dbHandler.Subscribe(brocker.RemoveUserFromGroup, h.db)
-	h.dbHandler.Subscribe(brocker.ChangeMessageStatus, h.db)
-}
-
-func StartReqHandling(srv *http.Server, h *HandlerManager) {
-	h.subscribeDB()
+func StartReqHandling(srv *http.Server, h *HandlerManager, n *Notifier) {
 
 	router := chi.NewRouter()
 	router.Use(chimiddleware.Logger)
@@ -95,9 +81,24 @@ func StartReqHandling(srv *http.Server, h *HandlerManager) {
 		r.Post("/library/refresh", h.handleLibRefresh)
 		r.Post("/upload/images", h.handleUpload)
 		r.Post("/auth/logout", h.handleLogOut)
+		r.Post("/group/create", h.handleNewGroup)
 
+		r.Get("/messages/sync", h.handleGroupMessageSync)
 		r.Get("/image/*", h.handleImage)
 		r.Get("/random/image", h.handleRandomImage)
+
+	})
+
+	router.Group(func(r chi.Router) {
+		r.Use(h.auth.AuthMiddleware, h.groupMiddleware)
+
+		r.Post("/group/{groupID}/manifest", h.handleGroupManifest)
+		r.Post("/group/{groupID}/upload/images", h.handleGroupUpload)
+		r.Post("/group/{groupID}/library/refresh", h.handleGroupLibRefresh)
+		r.Post("/group/{groupID}/post/messages", h.handleGroupMessage)
+
+		r.Get("/group/{groupID}/image/*", h.handleGroupImage)
+		r.Get("/group/{groupID}/users", h.handleGetGroupUserIDs)
 
 	})
 
@@ -128,8 +129,8 @@ func (h *HandlerManager) handleImage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	isHolders, err := h.db.NameBelongsToUser(imgName, userID)
-	if !isHolders {
+	isHolder, err := h.db.ImageBelongsToUser(imgName, userID)
+	if !isHolder {
 		http.Error(w, "you do not own the image", http.StatusForbidden)
 		return
 	}
@@ -403,57 +404,9 @@ func (h *HandlerManager) handleRandomImage(w http.ResponseWriter, r *http.Reques
 	}
 }
 
-func NewHandler(ctx context.Context, cm *caching.CacheManager, um *upload.Manager, db DBModule, handler *brocker.DBHandler) *HandlerManager {
+func NewHandler(ctx context.Context, cm *caching.CacheManager, um *upload.Manager, db *DBModule, handler *brocker.Handler) *HandlerManager {
 	auth := NewAuthenticator()
 
 	return &HandlerManager{
 		ctx: ctx, cacheManager: cm, uploadManager: um, db: db, dbHandler: handler, auth: &authManager{auth, db.TokenDB, handler}}
-}
-
-func GetImgOptions(r *http.Request) caching.Options {
-	u := r.URL.Query()
-	Category := GetIntQueryParam(u, "img_type", 0, func(val int) bool { return true })
-	Width := GetIntQueryParam(u, "width", 100, func(val int) bool { return val > 0 })
-	Height := GetIntQueryParam(u, "height", 100, func(val int) bool { return val > 0 })
-	Quality := GetIntQueryParam(u, "quality", 75, func(val int) bool { return val > 0 && val <= 100 })
-	Type := GetBimgTypeParam(u, "type")
-	return caching.Options{
-		Category: caching.ImageCategory(Category), BimgOpt: bimg.Options{
-			Width: Width, Height: Height, Quality: Quality,
-			Type: Type, StripMetadata: true,
-			Crop: true, Gravity: bimg.GravitySmart}}
-
-}
-
-func GetIntQueryParam(u url.Values, key string, defaultVal int, cond func(val int) bool) int {
-	valS := u.Get(key)
-	val, err := strconv.Atoi(valS)
-	if err != nil || !cond(val) {
-		val = defaultVal
-	}
-	return val
-}
-
-func GetBimgTypeParam(u url.Values, key string) bimg.ImageType {
-	valS := u.Get(key)
-	switch {
-	case valS == "JPEG":
-		return bimg.JPEG
-	case valS == "PNG":
-		return bimg.PNG
-	}
-	return bimg.JPEG
-}
-
-func extractDate(r *http.Request) (clientDate int) {
-	if metaStr := r.FormValue("metadata"); metaStr != "" {
-		var cm ClientMeta
-		if err := json.Unmarshal([]byte(metaStr), &cm); err == nil && cm.CreationTime > 0 {
-			t := time.UnixMilli(cm.CreationTime)
-			clientDate, _ = strconv.Atoi(t.Format("20060102"))
-		} else {
-			clientDate, _ = strconv.Atoi(time.Now().Format("20060102"))
-		}
-	}
-	return clientDate
 }

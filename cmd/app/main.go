@@ -68,12 +68,18 @@ func main() {
 	go errH.RunHandler()
 	dbh := brocker.NewDBHandler(ctx, issChan)
 
-	handler := request.NewHandler(ctx, cacheManager, uploadManager, dbh, ldb, ldb, ldb)
+	wp := &db.WPSubDB{ldb}
+	notifier := request.NewNotifier(wp)
+
+	dbh.Subscribe(brocker.SendMessage, notifier)
+	dbModule := createDBModule(ldb, dbh)
+
+	handler := request.NewHandler(ctx, cacheManager, uploadManager, dbModule, dbh)
 
 	srv := &http.Server{
 		Addr: ":8080",
 	}
-	request.StartReqHandling(srv, handler)
+	request.StartReqHandling(srv, handler, notifier)
 
 	quit := make(chan os.Signal, 1)
 	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
@@ -130,4 +136,30 @@ func mainSetup() (context.Context, context.CancelFunc, chan struct{}) {
 	cancelChan := make(chan struct{})
 	go readInput(cancelChan, scanner)
 	return ctx, cancel, cancelChan
+}
+
+func createDBModule(appDB *db.AppDB, handler *brocker.Handler) *request.DBModule {
+	ImageDB := &db.ImageDB{appDB}
+	GroupDB := &db.GroupDB{appDB}
+	GroupMessageDB := &db.MessageDB{appDB}
+	ImageUserDB := &db.ImageUserDB{ImageDB}
+	ImageGroupDB := &db.ImageGroupDB{ImageDB}
+	TokenDB := &db.TokenDB{appDB}
+	UserDB := &db.UserDB{appDB}
+	handler.Subscribe(brocker.InsertNewToken, TokenDB)
+	handler.Subscribe(brocker.RevokeToken, TokenDB)
+	handler.Subscribe(brocker.InsertNewImage, ImageDB)
+	handler.Subscribe(brocker.RemoveImage, ImageDB)
+	handler.Subscribe(brocker.AddUserToGroup, GroupDB)
+	handler.Subscribe(brocker.RemoveUserFromGroup, GroupDB)
+	handler.Subscribe(brocker.AddMessage, GroupMessageDB)
+	handler.Subscribe(brocker.ChangeMessageStatus, GroupMessageDB)
+	return &request.DBModule{
+		GroupDB:        GroupDB,
+		GroupMessageDB: GroupMessageDB,
+		ImageUserDB:    ImageUserDB,
+		ImageGroupDB:   ImageGroupDB,
+		TokenDB:        TokenDB,
+		UserDB:         UserDB,
+	}
 }

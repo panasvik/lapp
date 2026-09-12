@@ -1,8 +1,9 @@
 package request
 
 import (
-	"ImageCacheProject/internal/brocker"
 	"ImageCacheProject/internal/util"
+
+	"github.com/SherClockHolmes/webpush-go"
 )
 
 type DBModule struct {
@@ -16,50 +17,44 @@ type DBModule struct {
 
 type GroupDB interface {
 	RegisterNewGroup(groupName string, creatorID int) (int, error)
-	GetGroupUsersID(groupID int) ([]int, error)
-	ProcessEvent(e brocker.Event) util.Issue
-	PushLimit()
-	PullLimit()
+	GetGroupUserIDs(groupID int) ([]int, error)
 }
 
 type GroupMessageDB interface {
 	AddNewMessage(m util.Message) (int, error)
-	ProcessEvent(e brocker.Event) util.Issue
-	PushLimit()
-	PullLimit()
+	GetUnreadMessages(recipientID int) ([]util.Message, error)
 }
 
 type ImageGroupDB interface {
 	GetNamesGroup(targetDate int, groupID int) (names []string, err error)
 	GetDatesGroup(groupID int) (dates []int, err error)
 	GetLibsNamesGroup(groupID int) (names []string, err error)
-	NameBelongsToGroup(path string, groupID int) (bool, error)
-	ProcessEvent(e brocker.Event) util.Issue
-	PushLimit()
-	PullLimit()
+	ImageBelongsToGroup(path string, groupID int) (bool, error)
 }
 
 type ImageUserDB interface {
 	GetNamesUser(targetDate int, userID int) (names []string, err error)
 	GetDatesUser(userID int) (dates []int, err error)
 	GetLibsNamesUser(userID int) (names []string, err error)
-	NameBelongsToUser(path string, userID int) (bool, error)
-	ProcessEvent(e brocker.Event) util.Issue
-	PushLimit()
-	PullLimit()
+	ImageBelongsToUser(path string, userID int) (bool, error)
 }
 
 type TokenDB interface {
 	GetRefreshTokenInfo(refreshToken string) (util.TokenData, error)
-	ProcessEvent(e brocker.Event) util.Issue
-	PushLimit()
-	PullLimit()
 }
 
 type UserDB interface {
 	RegisterNewUser(userName string, password string) (int, error)
 	GetUserIDByCredentials(userName string, password string) (int, error)
-	//ProcessEvent(e brocker.Event) util.Issue
-	PushLimit()
-	PullLimit()
+}
+
+type WebPushDB interface {
+	AddSub(userID int, sub webpush.Subscription) (int, error)
+	GetSubs(userID int) ([]webpush.Subscription, error)
+	RemoveSub(userID int, sub webpush.Subscription) error
+}
+
+type DeviceDB interface {
+	GetDevicesTokenInfo(userID int) ([]util.UserDevice, error)
+	InsertNewDevice(userID int, deviceName string, os string) (int, error)
 }

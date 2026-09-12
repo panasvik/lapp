@@ -4,6 +4,8 @@ import (
 	"ImageCacheProject/internal/brocker"
 	"ImageCacheProject/internal/util"
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"net/http"
@@ -13,19 +15,25 @@ import (
 type authManager struct {
 	authenticator *Authenticator
 	tokenDB       TokenDB
-	dbHandler     *brocker.DBHandler
+	dbHandler     *brocker.Handler
 }
-
-type contextKey string
 
 const userIDKey contextKey = "userID"
 
-func ContextWithUserID(ctx context.Context, userID int) context.Context {
-	return context.WithValue(ctx, userIDKey, userID)
+const deviceIDKey contextKey = "deviceID"
+
+func ContextWithUserID(ctx context.Context, userID int, hashToken string) context.Context {
+	c := context.WithValue(ctx, userIDKey, userID)
+	return context.WithValue(c, deviceIDKey, hashToken)
 }
 
 func UserIDFromContext(ctx context.Context) (int, bool) {
 	id, ok := ctx.Value(userIDKey).(int)
+	return id, ok
+}
+
+func DeviceIDFromContext(ctx context.Context) (string, bool) {
+	id, ok := ctx.Value(deviceIDKey).(string)
 	return id, ok
 }
 
@@ -70,7 +78,11 @@ func (a *authManager) AuthMiddleware(next http.Handler) http.Handler {
 			return
 		}
 
-		ctx := ContextWithUserID(r.Context(), userID)
+		token, _ := extractAccessToken(r)
+		data := []byte(token)
+		hash := sha256.Sum256(data)
+		hashString := hex.EncodeToString(hash[:])
+		ctx := ContextWithUserID(r.Context(), userID, hashString)
 		next.ServeHTTP(w, r.WithContext(ctx))
 	})
 }
