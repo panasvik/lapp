@@ -188,7 +188,6 @@ func (h *HandlerManager) handleManifest(w http.ResponseWriter, r *http.Request) 
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	w.WriteHeader(http.StatusOK)
 }
 
 func (h *HandlerManager) handleUpload(w http.ResponseWriter, r *http.Request) {
@@ -220,7 +219,6 @@ func (h *HandlerManager) handleUpload(w http.ResponseWriter, r *http.Request) {
 	h.dbHandler.Publish(img, brocker.InsertNewImage)
 	tDB := time.Since(t2)
 	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusOK)
 
 	response := []string{"/uploads/" + header.Filename}
 	json.NewEncoder(w).Encode(response)
@@ -248,7 +246,6 @@ func (h *HandlerManager) handleSignIn(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusOK)
 	rInfo, err := h.auth.authenticator.CheckToken(refresh)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -290,7 +287,6 @@ func (h *HandlerManager) handleLogIn(w http.ResponseWriter, r *http.Request) {
 	h.dbHandler.Publish(rData, brocker.InsertNewToken)
 
 	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusOK)
 	json.NewEncoder(w).Encode(RefreshResp{AccessToken: access, RefreshToken: refresh})
 }
 
@@ -312,7 +308,6 @@ func (h *HandlerManager) handleLogOut(w http.ResponseWriter, r *http.Request) {
 	logoutInfo := util.UserLogOut{UserID: userID, DeviceName: req.DeviceName}
 	h.dbHandler.Publish(logoutInfo, brocker.RevokeToken)
 	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusOK)
 }
 
 func (h *HandlerManager) handleLibRefresh(w http.ResponseWriter, r *http.Request) {
@@ -330,7 +325,6 @@ func (h *HandlerManager) handleLibRefresh(w http.ResponseWriter, r *http.Request
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	w.WriteHeader(http.StatusOK)
 }
 
 func (h *HandlerManager) handleRandomManifest(w http.ResponseWriter, r *http.Request) {
@@ -360,7 +354,6 @@ func (h *HandlerManager) handleRandomManifest(w http.ResponseWriter, r *http.Req
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	w.WriteHeader(http.StatusOK)
 }
 
 func (h *HandlerManager) handleRandomImage(w http.ResponseWriter, r *http.Request) {

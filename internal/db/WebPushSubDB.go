@@ -39,7 +39,7 @@ func initWBSubDB(dbPath string) error {
 }
 
 func (db *WPSubDB) GetSubs(userID int) ([]webpush.Subscription, error) {
-	query := `SELECT (endpoint, p256dh, auth) FROM webPushSubs WHERE userID = ?`
+	query := `SELECT endpoint, p256dh, auth FROM webPushSubs WHERE userID = ?`
 	rows, err := db.Query(query, userID)
 	if err != nil {
 		return nil, fmt.Errorf("unable to get subs %w", err)
@@ -60,7 +60,7 @@ func (db *WPSubDB) GetSubs(userID int) ([]webpush.Subscription, error) {
 
 func (db *WPSubDB) AddSub(userID int, sub webpush.Subscription) (int, error) {
 	query := `INSERT INTO webPushSubs (userID, endpoint, p256dh, auth) 
-			VALUES ($1, $2, $3, $4)
+			VALUES (?, ?, ?, ?)
 			ON CONFLICT (userID, endpoint) DO NOTHING`
 	res, err := db.Exec(query, userID, sub.Endpoint, sub.Keys.P256dh, sub.Keys.Auth)
 	if err != nil {

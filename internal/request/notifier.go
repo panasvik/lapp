@@ -102,13 +102,16 @@ func (n *Notifier) handleStreamConnect(w http.ResponseWriter, r *http.Request) {
 
 	defer func() {
 		n.mu.Lock()
-		defer n.mu.Unlock()
-		delete(n.sseClients[userID], deviceID)
-		if len(n.sseClients[userID]) == 0 {
-			delete(n.sseClients, userID)
+		if devices, exists := n.sseClients[userID]; exists {
+			delete(devices, deviceID)
+			if len(devices) == 0 {
+				delete(n.sseClients, userID)
+			}
 		}
-		close(msgChan)
-		fmt.Println("user " + strconv.Itoa(userID) + "closed connection")
+		n.mu.Unlock()
+		// close(msgChan) НЕ вызываем: канал прочитан и будет удален GC,
+		// это на 100% исключает панику "send on closed channel".
+		fmt.Printf("user %d (device: %s) closed connection\n", userID, deviceID)
 	}()
 
 	ticker := time.NewTicker(25 * time.Second)
@@ -119,20 +122,44 @@ func (n *Notifier) handleStreamConnect(w http.ResponseWriter, r *http.Request) {
 		select {
 		case <-clientDone:
 			return
-
 		case <-ticker.C:
 			fmt.Fprintf(w, ": ping\n\n")
 			flusher.Flush()
-
-		case msg, ok := <-msgChan:
-			if !ok {
-				return
-			}
+		case msg := <-msgChan: // ok больше не нужно проверять
 			data, _ := json.Marshal(msg)
 			fmt.Fprintf(w, "data: %s\n\n", data)
 			flusher.Flush()
 		}
 	}
+}
+
+func (n *Notifier) sendMessage(m util.Message) error {
+	n.mu.RLock()
+	target, isOnline := n.sseClients[m.RecipientID]
+	var activeChans []chan util.Message
+	if isOnline {
+		for _, ch := range target {
+			activeChans = append(activeChans, ch)
+		}
+	}
+	n.mu.RUnlock()
+
+	if !isOnline || len(activeChans) == 0 {
+		fmt.Println("sending webpush to " + strconv.Itoa(m.RecipientID))
+		return n.sendWebPushes(m)
+	}
+
+	var err error
+	for _, targetChan := range activeChans {
+		select {
+		case targetChan <- m:
+			fmt.Println("message was sent")
+		default:
+			fmt.Println("unable to send message, chan is full")
+			err = ErrFullSSEChan
+		}
+	}
+	return err
 }
 
 func (n *Notifier) ProcessEvent(e brocker.Event) util.Issue {
@@ -163,29 +190,6 @@ func (n *Notifier) ProcessEvent(e brocker.Event) util.Issue {
 func (n *Notifier) PushLimit() {}
 func (n *Notifier) PullLimit() {}
 
-func (n *Notifier) sendMessage(m util.Message) error {
-	target, isOnline := n.sseClients[m.RecipientID]
-	var err error
-	if !isOnline {
-		fmt.Println("sending webpush to " + strconv.Itoa(m.RecipientID))
-		sendErr := n.sendWebPushes(m)
-		if sendErr != nil {
-			err = sendErr
-		}
-	} else {
-		for _, targetChan := range target {
-			select {
-			case targetChan <- m:
-				fmt.Println("message was sent")
-			default:
-				fmt.Println("unable to send message, chan is full")
-				err = ErrFullSSEChan
-			}
-		}
-	}
-	return err
-}
-
 func (n *Notifier) sendWebPushes(m util.Message) error {
 	subs, err := n.webPdb.GetSubs(m.RecipientID)
 	if err != nil {
@@ -197,6 +201,9 @@ func (n *Notifier) sendWebPushes(m util.Message) error {
 	}
 	for _, sub := range subs {
 		res := n.sendWebPush(payload, sub)
+		if errors.Is(res, ErrDeprecatedSub) {
+			n.webPdb.RemoveSub(m.RecipientID, sub)
+		}
 		if res != nil {
 			err = res
 		}

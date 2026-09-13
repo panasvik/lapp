@@ -37,20 +37,20 @@ func initMessagesDB(dbPath string) error {
 
 // addNewMessage: m.messageID is ignored when adding a message
 func (db *MessageDB) AddNewMessage(m util.Message) (int, error) {
-	query := `INSERT INTO messages (senderID, recipientID, groupID, msgType, content, createdAt, status) VALUES ($1, $2, $3, $4, $5, $6, $7)`
+	query := `INSERT INTO messages (senderID, recipientID, groupID, msgType, content, createdAt, status) VALUES (?, ?, ?, ?, ?, ?, ?)`
 	res, err := db.Exec(query, m.SenderID, m.RecipientID, m.GroupID, m.MsgType, m.Content, m.CreatedAt, m.Status)
 	if err != nil {
 		return -1, err
 	}
-	groupID, err := res.LastInsertId()
+	messageID, err := res.LastInsertId()
 	if err != nil {
-		return -1, fmt.Errorf("unable to get groupID %w", err)
+		return -1, fmt.Errorf("unable to get messageID %w", err)
 	}
-	return int(groupID), nil
+	return int(messageID), nil
 }
 
 func (db *MessageDB) GetUnreadMessages(recipientID int) ([]util.Message, error) {
-	query := `SELECT * from messages WHERE recipientID = ?`
+	query := `SELECT * from messages WHERE recipientID = ? AND Status < 2`
 	rows, err := db.Query(query, recipientID)
 	if err != nil {
 		return nil, err

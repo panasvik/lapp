@@ -43,7 +43,7 @@ func (h *HandlerManager) groupMiddleware(next http.Handler) http.Handler {
 }
 
 func GroupIDFromURL(r *http.Request) (int, error) {
-	idStr := r.PathValue("groupID")
+	idStr := chi.URLParam(r, "groupID")
 	return strconv.Atoi(idStr)
 }
 
@@ -80,7 +80,6 @@ func (h *HandlerManager) handleNewGroup(w http.ResponseWriter, r *http.Request) 
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	w.WriteHeader(http.StatusOK)
 }
 
 func (h *HandlerManager) handleGetGroupUserIDs(w http.ResponseWriter, r *http.Request) {
@@ -100,7 +99,6 @@ func (h *HandlerManager) handleGetGroupUserIDs(w http.ResponseWriter, r *http.Re
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	w.WriteHeader(http.StatusOK)
 }
 
 func (h *HandlerManager) handleGroupImage(w http.ResponseWriter, r *http.Request) {
@@ -177,7 +175,6 @@ func (h *HandlerManager) handleGroupManifest(w http.ResponseWriter, r *http.Requ
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	w.WriteHeader(http.StatusOK)
 }
 
 func (h *HandlerManager) handleGroupUpload(w http.ResponseWriter, r *http.Request) {
@@ -288,7 +285,6 @@ func (h *HandlerManager) handleGroupMessageSync(w http.ResponseWriter, r *http.R
 		message.Status = util.Delivered
 		h.dbHandler.Publish(message, brocker.ChangeMessageStatus)
 	}
-	w.WriteHeader(http.StatusOK)
 }
 
 func (h *HandlerManager) isGroupMember(groupID int, userID int) bool {

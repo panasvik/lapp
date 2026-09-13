@@ -27,7 +27,7 @@ func initGroupDB(dbPath string) error {
 	CREATE TABLE IF NOT EXISTS groups (
 		groupID INTEGER PRIMARY KEY AUTOINCREMENT,
 	    groupName TEXT, 
-		creatorID INTEGER,
+		creatorID INTEGER
 	);`
 	createGroupUsersTableSQL := `
 	CREATE TABLE IF NOT EXISTS groupUsers (
@@ -49,7 +49,7 @@ func (db *GroupDB) RegisterNewGroup(groupName string, creatorID int) (int, error
 	if db.groupExists(groupName) {
 		return -1, fmt.Errorf("%w by the name of %s", ErrGroupAlreadyExists, groupName)
 	}
-	query := `INSERT INTO groups (groupName, creatorID) VALUES ($1, $2)`
+	query := `INSERT INTO groups (groupName, creatorID) VALUES (?, ?)`
 	res, err := db.Exec(query, groupName, creatorID)
 	if err != nil {
 		return -1, err
@@ -84,7 +84,7 @@ func (db *GroupDB) GetGroupUserIDs(groupID int) ([]int, error) {
 }
 
 func (db *GroupDB) addUserToGroup(groupID int, userID int, role string) error {
-	query := `INSERT INTO groupUsers (groupID, userID, role) VALUES ($1, $2, $3)`
+	query := `INSERT INTO groupUsers (groupID, userID, role) VALUES (?, ?, ?)`
 	_, err := db.Exec(query, groupID, userID, role)
 	return err
 }
