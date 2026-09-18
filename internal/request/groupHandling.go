@@ -346,8 +346,12 @@ func (h *HandlerManager) handleGroupMessageSync(w http.ResponseWriter, r *http.R
 func (h *HandlerManager) isGroupMember(groupID int, userID int) bool {
 	ids, err := h.db.GetGroupUserIDs(groupID)
 	if err != nil {
+		fmt.Printf("[groupMiddleware] Error fetching members for group %d: %v\n", groupID, err)
 		return false
 	}
 	isMember := slices.Contains(ids, userID)
+	if !isMember {
+		fmt.Printf("[groupMiddleware] FORBIDDEN: User %d is NOT in group %d. Existing members: %v\n", userID, groupID, ids)
+	}
 	return isMember
 }
