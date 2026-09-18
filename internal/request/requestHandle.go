@@ -333,10 +333,15 @@ func (h *HandlerManager) handleLibRefresh(w http.ResponseWriter, r *http.Request
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	if err := json.NewEncoder(w).Encode(imgNames); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
+
+	signedURLs := make([]string, len(imgNames))
+	for i, name := range imgNames {
+		rawPath := "/image/" + name
+		signedURLs[i] = h.signer.SignURL(rawPath, userID, 30*time.Minute)
 	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(signedURLs)
 }
 
 func (h *HandlerManager) handleRandomManifest(w http.ResponseWriter, r *http.Request) {
