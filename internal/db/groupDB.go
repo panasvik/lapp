@@ -191,3 +191,33 @@ func (db *GroupDB) ProcessEvent(e brocker.Event) util.Issue {
 	}
 	return nil
 }
+
+type UserGroupInfo struct {
+	ID   int    `json:"id"`
+	Name string `json:"name"`
+}
+
+func (db *GroupDB) GetUserGroupsList(userID int) ([]UserGroupInfo, error) {
+	query := `
+		SELECT g.groupID, g.groupName 
+		FROM groups g
+		INNER JOIN groupUsers gu ON g.groupID = gu.groupID
+		WHERE gu.userID = ?
+		ORDER BY g.groupID ASC
+	`
+	rows, err := db.Query(query, userID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	list := make([]UserGroupInfo, 0)
+	for rows.Next() {
+		var item UserGroupInfo
+		if err := rows.Scan(&item.ID, &item.Name); err != nil {
+			return nil, err
+		}
+		list = append(list, item)
+	}
+	return list, rows.Err()
+}

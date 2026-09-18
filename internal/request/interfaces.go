@@ -1,6 +1,7 @@
 package request
 
 import (
+	"ImageCacheProject/internal/db"
 	"ImageCacheProject/internal/util"
 
 	"github.com/SherClockHolmes/webpush-go"
@@ -21,6 +22,7 @@ type GroupDB interface {
 	GetUserGroupNames(userID int) ([]string, error)
 	GetUserGroupIDs(userID int) ([]int, error)
 	GetGroupName(groupID int) (string, error)
+	GetUserGroupsList(userID int) ([]db.UserGroupInfo, error)
 }
 
 type GroupMessageDB interface {

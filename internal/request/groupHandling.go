@@ -241,14 +241,19 @@ func (h *HandlerManager) handleGroupUpload(w http.ResponseWriter, r *http.Reques
 func (h *HandlerManager) handleGroupsReq(w http.ResponseWriter, r *http.Request) {
 	userID, ok := UserIDFromContext(r.Context())
 	if !ok {
-		http.Error(w, "no group id provided", http.StatusBadRequest)
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
 		return
 	}
-	names, err := h.db.GetUserGroupNames(userID)
+
+	groups, err := h.db.GetUserGroupsList(userID)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
 	}
-	if err := json.NewEncoder(w).Encode(names); err != nil {
+
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Cache-Control", "no-store, no-cache, must-revalidate")
+	if err := json.NewEncoder(w).Encode(groups); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
