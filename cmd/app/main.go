@@ -23,6 +23,11 @@ import (
 )
 
 func main() {
+	err := godotenv.Load()
+	if err != nil {
+		slog.Error(".env file was not found")
+	}
+
 	coldBoot := flag.Bool("coldboot", false, "start DB")
 	flag.Parse()
 	if *coldBoot {
@@ -44,10 +49,6 @@ func main() {
 			fmt.Print("main: ", err.Error())
 		}
 	}()
-	err = godotenv.Load()
-	if err != nil {
-		slog.Error(".env file was not found")
-	}
 
 	cacheDir := os.Getenv("CACHE_DIR")
 	cacheLibDir := os.Getenv("CACHE_LIB_DIR")
