@@ -150,12 +150,6 @@ func (h *HandlerManager) handleGroupImage(w http.ResponseWriter, r *http.Request
 }
 
 func (h *HandlerManager) handleGroupManifest(w http.ResponseWriter, r *http.Request) {
-	userID, ok := UserIDFromContext(r.Context())
-	if !ok {
-		http.Error(w, "unauthorized", http.StatusUnauthorized)
-		return
-	}
-
 	groupID, ok := GroupIDFromContext(r.Context())
 	if !ok {
 		http.Error(w, "no group id", http.StatusBadRequest)
@@ -163,11 +157,9 @@ func (h *HandlerManager) handleGroupManifest(w http.ResponseWriter, r *http.Requ
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	w.Header().Set("Access-Control-Allow-Origin", "*")
 	var req ManifestReq
 
-	err := json.NewDecoder(r.Body).Decode(&req)
-	if err != nil {
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, "wrong JSON format", http.StatusBadRequest)
 		return
 	}
@@ -181,11 +173,10 @@ func (h *HandlerManager) handleGroupManifest(w http.ResponseWriter, r *http.Requ
 
 	signedURLs := make([]string, len(imgNames))
 	for i, name := range imgNames {
-		rawPath := "/image/" + name
-		signedURLs[i] = h.signer.SignURL(rawPath, userID, 30*time.Minute)
+		rawPath := fmt.Sprintf("/group/%d/image/%s", groupID, name)
+		signedURLs[i] = h.signer.SignURL(rawPath, groupID, 30*time.Minute)
 	}
 
-	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(signedURLs)
 }
 
