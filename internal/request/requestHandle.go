@@ -425,11 +425,13 @@ func (h *HandlerManager) handleRandomImage(w http.ResponseWriter, r *http.Reques
 
 func (h *HandlerManager) handleFindUser(w http.ResponseWriter, r *http.Request) {
 	targetName := chi.URLParam(r, "username")
+	fmt.Println(r.URL.Path)
 	if targetName == "" {
+		fmt.Println("bad username")
 		http.Error(w, "empty username", http.StatusBadRequest)
 		return
 	}
-
+	fmt.Println("username is: " + targetName)
 	targetID, err := h.db.GetUserIDByName(targetName)
 	if err != nil {
 		http.Error(w, "user not found", http.StatusNotFound)
