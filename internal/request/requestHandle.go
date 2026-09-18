@@ -85,6 +85,7 @@ func StartReqHandling(srv *http.Server, h *HandlerManager, n *Notifier) {
 		r.Post("/group/create", h.handleNewGroup)
 		r.Post("/notifier/subscribe", n.handleSubscription)
 		r.Post("/group/IDs", h.handleGroupsIDReq)
+		r.Post("/group/{groupID}/post/messages", h.handleGroupMessage)
 
 		r.Get("/notifier/stream", n.handleStreamConnect)
 		r.Get("/messages/sync", h.handleGroupMessageSync)
@@ -98,7 +99,6 @@ func StartReqHandling(srv *http.Server, h *HandlerManager, n *Notifier) {
 		r.Post("/group/{groupID}/manifest", h.handleGroupManifest)
 		r.Post("/group/{groupID}/upload/images", h.handleGroupUpload)
 		r.Post("/group/{groupID}/library/refresh", h.handleGroupLibRefresh)
-		r.Post("/group/{groupID}/post/messages", h.handleGroupMessage)
 		r.Get("/group/{groupID}/users", h.handleGetGroupUserIDs)
 
 	})

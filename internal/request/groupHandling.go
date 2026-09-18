@@ -315,6 +315,12 @@ func (h *HandlerManager) handleGroupMessage(w http.ResponseWriter, r *http.Reque
 		http.Error(w, "invalid recipient id provided", http.StatusBadRequest)
 		return
 	}
+	if req.MsgType == util.Invitation || req.MsgType == util.LibUpdate {
+		if !h.isGroupMember(groupID, userID) {
+			http.Error(w, "not a group member", http.StatusForbidden)
+			return
+		}
+	}
 
 	senderName, _ := h.db.GetUserNameByID(userID)
 	recName, _ := h.db.GetUserNameByID(req.RecID)
