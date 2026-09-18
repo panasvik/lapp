@@ -437,6 +437,7 @@ func (h *HandlerManager) handleFindUser(w http.ResponseWriter, r *http.Request) 
 	}
 
 	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Cache-Control", "no-store, no-cache, must-revalidate")
 	json.NewEncoder(w).Encode(map[string]int{"userID": targetID})
 }
 

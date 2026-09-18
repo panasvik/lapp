@@ -311,18 +311,20 @@ func (h *HandlerManager) handleGroupMessage(w http.ResponseWriter, r *http.Reque
 	}
 	var req RecIDReq
 	err := json.NewDecoder(r.Body).Decode(&req)
-	if err != nil {
-		http.Error(w, "no recipient id provided", http.StatusBadRequest)
+	if err != nil || req.RecID <= 0 {
+		http.Error(w, "invalid recipient id provided", http.StatusBadRequest)
 		return
 	}
+
 	senderName, _ := h.db.GetUserNameByID(userID)
 	recName, _ := h.db.GetUserNameByID(req.RecID)
 	groupName, _ := h.db.GetGroupName(groupID)
 	content := fmt.Sprintf("user %s sends you, %s, a message of type %s, group %s", senderName, recName, (&req.MsgType).ToString(), groupName)
 	msg := util.FormNewMessage(userID, req.RecID, groupID, req.MsgType, content)
 	h.dbHandler.Publish(msg, brocker.AddMessage)
-}
 
+	w.WriteHeader(http.StatusOK)
+}
 func (h *HandlerManager) handleGroupMessageSync(w http.ResponseWriter, r *http.Request) {
 	userID, ok := UserIDFromContext(r.Context())
 	if !ok {
