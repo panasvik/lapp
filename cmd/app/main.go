@@ -67,7 +67,7 @@ func main() {
 	errH := brocker.NewErrorHandler(ctx, &paths, issChan)
 	go errH.RunHandler()
 	dbh := brocker.NewDBHandler(ctx, issChan)
-
+	dbh.InitDBHandler()
 	wp := &db.WPSubDB{ldb}
 	notifier := request.NewNotifier(wp)
 
