@@ -101,7 +101,6 @@ func (h *HandlerManager) handleGetGroupUserIDs(w http.ResponseWriter, r *http.Re
 		return
 	}
 }
-
 func (h *HandlerManager) handleGroupImage(w http.ResponseWriter, r *http.Request) {
 	groupID, ok := GroupIDFromContext(r.Context())
 	if !ok {
@@ -110,12 +109,14 @@ func (h *HandlerManager) handleGroupImage(w http.ResponseWriter, r *http.Request
 	}
 
 	w.Header().Set("Access-Control-Allow-Origin", "*")
-	imgName := chi.URLParam(r, "*")
+	rawImgName := chi.URLParam(r, "*")
 
-	if imgName == "" {
+	if rawImgName == "" {
 		http.Error(w, "missing image path", http.StatusBadRequest)
 		return
 	}
+
+	imgName := filepath.Base(rawImgName)
 
 	isHolder, err := h.db.ImageBelongsToGroup(imgName, groupID)
 	if !isHolder {
@@ -148,6 +149,7 @@ func (h *HandlerManager) handleGroupImage(w http.ResponseWriter, r *http.Request
 		return
 	}
 }
+
 func (h *HandlerManager) handleGroupManifest(w http.ResponseWriter, r *http.Request) {
 	groupID, ok := GroupIDFromContext(r.Context())
 	if !ok {
@@ -267,16 +269,10 @@ func (h *HandlerManager) handleGroupsIDReq(w http.ResponseWriter, r *http.Reques
 		return
 	}
 }
-
 func (h *HandlerManager) handleGroupLibRefresh(w http.ResponseWriter, r *http.Request) {
 	groupID, ok := GroupIDFromContext(r.Context())
 	if !ok {
 		http.Error(w, "no group id provided", http.StatusBadRequest)
-		return
-	}
-	imgNames, err := h.db.GetLibsNamesGroup(groupID)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 	userID, ok := UserIDFromContext(r.Context())
@@ -284,9 +280,17 @@ func (h *HandlerManager) handleGroupLibRefresh(w http.ResponseWriter, r *http.Re
 		http.Error(w, "unauthorized", http.StatusUnauthorized)
 		return
 	}
+
+	imgNames, err := h.db.GetLibsNamesGroup(groupID)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
 	signedURLs := make([]string, len(imgNames))
 	for i, name := range imgNames {
-		rawPath := "/image/" + name
+		// Формируем маршрут именно к групповому обработчику
+		rawPath := fmt.Sprintf("/group/%d/image/%s", groupID, name)
 		signedURLs[i] = h.signer.SignURL(rawPath, userID, 30*time.Minute)
 	}
 
