@@ -44,6 +44,10 @@ func main() {
 			fmt.Print("main: ", err.Error())
 		}
 	}()
+	err = godotenv.Load()
+	if err != nil {
+		slog.Error(".env file was not found")
+	}
 
 	cacheDir := os.Getenv("CACHE_DIR")
 	cacheLibDir := os.Getenv("CACHE_LIB_DIR")
@@ -53,10 +57,6 @@ func main() {
 	paths := util.Paths{OriginalsDir: uploadsDir, CacheDir: cacheDir, CacheModalDir: cacheModDir, CacheLibDir: cacheLibDir, CacheManDir: cacheManDir}
 
 	cacheManager := caching.InitCache(ctx, &paths)
-	err = godotenv.Load()
-	if err != nil {
-		slog.Error(".env file was not found")
-	}
 	uploadManager := upload.NewManager(&paths)
 
 	if err != nil {
