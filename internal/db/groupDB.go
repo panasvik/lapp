@@ -6,6 +6,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"log/slog"
 )
 
 var (
@@ -58,6 +59,13 @@ func (db *GroupDB) RegisterNewGroup(groupName string, creatorID int) (int, error
 	if err != nil {
 		return -1, fmt.Errorf("unable to get groupID %w", err)
 	}
+
+	query2 := `INSERT INTO groupUsers (groupID, userID, role) VALUES (?, ?, ?)`
+	_, err = db.Exec(query2, groupID, creatorID, "admin")
+	if err != nil {
+		return -1, err
+	}
+
 	return int(groupID), nil
 }
 
@@ -81,6 +89,46 @@ func (db *GroupDB) GetGroupUserIDs(groupID int) ([]int, error) {
 		return nil, fmt.Errorf("error reading results: %w", err)
 	}
 	return userIDs, nil
+}
+
+func (db *GroupDB) GetUserGroupNames(userID int) ([]string, error) {
+	query := `SELECT groupID FROM groupUsers WHERE userID = ?`
+	rows, err := db.Query(query, userID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var groupIDs []int
+	for rows.Next() {
+		var groupID int
+		if err := rows.Scan(&groupID); err != nil {
+			return nil, fmt.Errorf("error parsing string: %w", err)
+		}
+		groupIDs = append(groupIDs, groupID)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("error reading results: %w", err)
+	}
+	query2 := `SELECT groupName FROM groups WHERE groupID = ?`
+	var groupNames []string
+	for _, groupID := range groupIDs {
+		var groupName string
+		err = db.QueryRow(query2, groupID).Scan(&groupName)
+		if err != nil {
+			slog.Warn("unable to get groupName")
+			continue
+		}
+		groupNames = append(groupNames, groupName)
+	}
+	return groupNames, nil
+}
+
+func (db *GroupDB) GetGroupName(groupID int) (string, error) {
+	query := `SELECT groupName FROM groups WHERE groupID = ?`
+	var groupName string
+	err := db.QueryRow(query, groupID).Scan(&groupName)
+	return groupName, err
 }
 
 func (db *GroupDB) addUserToGroup(groupID int, userID int, role string) error {

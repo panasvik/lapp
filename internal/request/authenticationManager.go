@@ -87,6 +87,40 @@ func (a *authManager) AuthMiddleware(next http.Handler) http.Handler {
 	})
 }
 
+func (a *authManager) SignedOrAuthMiddleware(signer *Signer) func(http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			query := r.URL.Query()
+			sig := query.Get("sig")
+			exp := query.Get("exp")
+			uid := query.Get("uid")
+
+			// Вариант 1: Запрос через подписанный URL (например, из <img src="...">)
+			if sig != "" && exp != "" && uid != "" {
+				userID, valid := signer.Validate(r.URL.Path, exp, uid, sig)
+				if !valid {
+					http.Error(w, "invalid or expired image link", http.StatusForbidden)
+					return
+				}
+
+				ctx := ContextWithUserID(r.Context(), userID, "signed_request")
+				next.ServeHTTP(w, r.WithContext(ctx))
+				return
+			}
+
+			// Вариант 2: Запасной вариант — стандартный Bearer-токен
+			userID, err := a.checkAccessToken(r)
+			if err != nil {
+				http.Error(w, "unauthorized", http.StatusUnauthorized)
+				return
+			}
+
+			ctx := ContextWithUserID(r.Context(), userID, "bearer_request")
+			next.ServeHTTP(w, r.WithContext(ctx))
+		})
+	}
+}
+
 func (a *authManager) handleRefresh(w http.ResponseWriter, r *http.Request) {
 
 	var req RefreshReq

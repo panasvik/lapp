@@ -77,7 +77,7 @@ func (n *Notifier) handleStreamConnect(w http.ResponseWriter, r *http.Request) {
 	 it will not affect the device identification, because here it is not
 	 used for authentication but for differing connected user devices.
 	 It is because the connection does not close when the user access token
-	 expires and is fulfilling the purpose of dynamic sort-term connection
+	 expires and is fulfilling the purpose of a dynamic short-term connection
 	*/
 	deviceID, ok := DeviceIDFromContext(r.Context())
 	if !ok {

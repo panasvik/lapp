@@ -25,6 +25,7 @@ type HandlerManager struct {
 	uploadManager *upload.Manager
 	dbHandler     *brocker.Handler
 	auth          *authManager
+	signer        *Signer
 }
 
 var (
@@ -82,11 +83,11 @@ func StartReqHandling(srv *http.Server, h *HandlerManager, n *Notifier) {
 		r.Post("/upload/images", h.handleUpload)
 		r.Post("/auth/logout", h.handleLogOut)
 		r.Post("/group/create", h.handleNewGroup)
+		r.Post("/notifier/subscribe", n.handleSubscription)
 
+		r.Get("/notifier/stream", n.handleStreamConnect)
 		r.Get("/messages/sync", h.handleGroupMessageSync)
-		r.Get("/image/*", h.handleImage)
-		r.Get("/random/image", h.handleRandomImage)
-
+		r.Get("/groups", h.handleGroupsReq)
 	})
 
 	router.Group(func(r chi.Router) {
@@ -96,10 +97,21 @@ func StartReqHandling(srv *http.Server, h *HandlerManager, n *Notifier) {
 		r.Post("/group/{groupID}/upload/images", h.handleGroupUpload)
 		r.Post("/group/{groupID}/library/refresh", h.handleGroupLibRefresh)
 		r.Post("/group/{groupID}/post/messages", h.handleGroupMessage)
-
-		r.Get("/group/{groupID}/image/*", h.handleGroupImage)
 		r.Get("/group/{groupID}/users", h.handleGetGroupUserIDs)
 
+	})
+
+	router.Group(func(r chi.Router) {
+		r.Use(h.auth.SignedOrAuthMiddleware(h.signer))
+
+		r.Get("/random/image", h.handleRandomImage)
+		r.Get("/image/*", h.handleImage)
+	})
+
+	router.Group(func(r chi.Router) {
+		r.Use(h.auth.SignedOrAuthMiddleware(h.signer), h.groupMiddleware)
+
+		r.Get("/group/{groupID}/image/*", h.handleGroupImage)
 	})
 
 	srv.Handler = router
@@ -160,7 +172,6 @@ func (h *HandlerManager) handleImage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 }
-
 func (h *HandlerManager) handleManifest(w http.ResponseWriter, r *http.Request) {
 	userID, ok := UserIDFromContext(r.Context())
 	if !ok {
@@ -168,26 +179,27 @@ func (h *HandlerManager) handleManifest(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	w.Header().Set("Content-Type", "application/json")
-	w.Header().Set("Access-Control-Allow-Origin", "*")
 	var req ManifestReq
-
-	err := json.NewDecoder(r.Body).Decode(&req)
-	if err != nil {
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, "wrong JSON format", http.StatusBadRequest)
 		return
 	}
 	defer r.Body.Close()
 
-	imgPaths, err := h.db.GetNamesUser(req.Date, userID)
+	imgNames, err := h.db.GetNamesUser(req.Date, userID)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	if err := json.NewEncoder(w).Encode(imgPaths); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
+
+	signedURLs := make([]string, len(imgNames))
+	for i, name := range imgNames {
+		rawPath := "/image/" + name
+		signedURLs[i] = h.signer.SignURL(rawPath, userID, 30*time.Minute)
 	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(signedURLs)
 }
 
 func (h *HandlerManager) handleUpload(w http.ResponseWriter, r *http.Request) {
@@ -345,12 +357,19 @@ func (h *HandlerManager) handleRandomManifest(w http.ResponseWriter, r *http.Req
 		return
 	}
 	date := dates[rand.N(len(dates))]
-	imgPaths, err := h.db.GetNamesUser(date, userID)
+	imgNames, err := h.db.GetNamesUser(date, userID)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	if err := json.NewEncoder(w).Encode(imgPaths); err != nil {
+
+	signedURLs := make([]string, len(imgNames))
+	for i, name := range imgNames {
+		rawPath := "/image/" + name
+		signedURLs[i] = h.signer.SignURL(rawPath, userID, 30*time.Minute)
+	}
+
+	if err := json.NewEncoder(w).Encode(signedURLs); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
@@ -397,9 +416,9 @@ func (h *HandlerManager) handleRandomImage(w http.ResponseWriter, r *http.Reques
 	}
 }
 
-func NewHandler(ctx context.Context, cm *caching.CacheManager, um *upload.Manager, db *DBModule, handler *brocker.Handler) *HandlerManager {
+func NewHandler(ctx context.Context, cm *caching.CacheManager, um *upload.Manager, db *DBModule, handler *brocker.Handler, signer *Signer) *HandlerManager {
 	auth := NewAuthenticator()
 
 	return &HandlerManager{
-		ctx: ctx, cacheManager: cm, uploadManager: um, db: db, dbHandler: handler, auth: &authManager{auth, db.TokenDB, handler}}
+		ctx: ctx, cacheManager: cm, uploadManager: um, db: db, dbHandler: handler, auth: &authManager{auth, db.TokenDB, handler}, signer: signer}
 }

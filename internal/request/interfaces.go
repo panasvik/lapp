@@ -18,6 +18,8 @@ type DBModule struct {
 type GroupDB interface {
 	RegisterNewGroup(groupName string, creatorID int) (int, error)
 	GetGroupUserIDs(groupID int) ([]int, error)
+	GetUserGroupNames(userID int) ([]string, error)
+	GetGroupName(groupID int) (string, error)
 }
 
 type GroupMessageDB interface {
@@ -46,6 +48,7 @@ type TokenDB interface {
 type UserDB interface {
 	RegisterNewUser(userName string, password string) (int, error)
 	GetUserIDByCredentials(userName string, password string) (int, error)
+	GetUserNameByID(userID int) (string, error)
 }
 
 type WebPushDB interface {

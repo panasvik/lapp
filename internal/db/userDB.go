@@ -74,3 +74,10 @@ func (db *UserDB) GetUserIDByCredentials(userName string, password string) (int,
 	err := db.QueryRow(query, userName, hashString).Scan(&userID)
 	return userID, err
 }
+
+func (db *UserDB) GetUserNameByID(userID int) (string, error) {
+	query := `SELECT userName FROM users WHERE userID = ?`
+	var userName string
+	err := db.QueryRow(query, userID).Scan(&userName)
+	return userName, err
+}

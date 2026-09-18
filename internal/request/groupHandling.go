@@ -216,14 +216,32 @@ func (h *HandlerManager) handleGroupUpload(w http.ResponseWriter, r *http.Reques
 		return
 	}
 	for _, userID := range userIDs {
+		senderName, _ := h.db.GetUserNameByID(userID)
+		groupName, _ := h.db.GetUserNameByID(groupID)
 		msg := util.FormNewMessage(
 			senderID,
 			userID,
 			groupID,
 			util.LibUpdate,
-			fmt.Sprintf("user %d updated the group library %d", senderID, groupID))
+			fmt.Sprintf("user %s updated the group library %s", senderName, groupName))
 
 		h.dbHandler.Publish(msg, brocker.AddMessage)
+	}
+}
+
+func (h *HandlerManager) handleGroupsReq(w http.ResponseWriter, r *http.Request) {
+	userID, ok := UserIDFromContext(r.Context())
+	if !ok {
+		http.Error(w, "no group id provided", http.StatusBadRequest)
+		return
+	}
+	names, err := h.db.GetUserGroupNames(userID)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+	}
+	if err := json.NewEncoder(w).Encode(names); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
 	}
 }
 
@@ -242,7 +260,6 @@ func (h *HandlerManager) handleGroupLibRefresh(w http.ResponseWriter, r *http.Re
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-
 }
 
 func (h *HandlerManager) handleGroupMessage(w http.ResponseWriter, r *http.Request) {
@@ -262,7 +279,10 @@ func (h *HandlerManager) handleGroupMessage(w http.ResponseWriter, r *http.Reque
 		http.Error(w, "no recipient id provided", http.StatusBadRequest)
 		return
 	}
-	content := fmt.Sprintf("user %d invites you to the group %d", userID, groupID)
+	senderName, _ := h.db.GetUserNameByID(userID)
+	recName, _ := h.db.GetUserNameByID(req.RecID)
+	groupName, _ := h.db.GetGroupName(groupID)
+	content := fmt.Sprintf("user %s sends you, %s, a message of type %s, group %s", senderName, recName, (&req.MsgType).ToString(), groupName)
 	msg := util.FormNewMessage(userID, req.RecID, groupID, req.MsgType, content)
 	h.dbHandler.Publish(msg, brocker.AddMessage)
 }

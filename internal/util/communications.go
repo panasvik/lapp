@@ -14,6 +14,25 @@ const (
 	LibUpdate  MsgType = 3
 )
 
+func (m *MsgType) ToString() string {
+	if m == nil {
+		return ""
+	}
+	val := *m
+	switch val {
+	case Invitation:
+		return "Invitation"
+	case Rejection:
+		return "Rejection"
+	case Consent:
+		return "Consent"
+	case LibUpdate:
+		return "Library Update"
+	default:
+		return ""
+	}
+}
+
 type MsgStatus int
 
 const (
@@ -81,14 +100,14 @@ type UserDevice struct {
 	OS     string
 }
 
-func (t *MsgType) Scan(value interface{}) error {
+func (m *MsgType) Scan(value interface{}) error {
 	if value == nil {
-		*t = 0
+		*m = 0
 		return nil
 	}
 
 	if i, ok := value.(int64); ok {
-		*t = MsgType(i)
+		*m = MsgType(i)
 		return nil
 	}
 	return fmt.Errorf("cannot scan %T into topic", value)

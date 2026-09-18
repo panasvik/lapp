@@ -74,7 +74,8 @@ func main() {
 	dbh.Subscribe(brocker.SendMessage, notifier)
 	dbModule := createDBModule(ldb, dbh)
 
-	handler := request.NewHandler(ctx, cacheManager, uploadManager, dbModule, dbh)
+	signer := request.NewSigner()
+	handler := request.NewHandler(ctx, cacheManager, uploadManager, dbModule, dbh, signer)
 
 	srv := &http.Server{
 		Addr: ":8080",
