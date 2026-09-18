@@ -148,11 +148,15 @@ func (h *HandlerManager) handleGroupImage(w http.ResponseWriter, r *http.Request
 		return
 	}
 }
-
 func (h *HandlerManager) handleGroupManifest(w http.ResponseWriter, r *http.Request) {
 	groupID, ok := GroupIDFromContext(r.Context())
 	if !ok {
 		http.Error(w, "no group id", http.StatusBadRequest)
+		return
+	}
+	userID, ok := UserIDFromContext(r.Context())
+	if !ok {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
 		return
 	}
 
@@ -174,7 +178,7 @@ func (h *HandlerManager) handleGroupManifest(w http.ResponseWriter, r *http.Requ
 	signedURLs := make([]string, len(imgNames))
 	for i, name := range imgNames {
 		rawPath := fmt.Sprintf("/group/%d/image/%s", groupID, name)
-		signedURLs[i] = h.signer.SignURL(rawPath, groupID, 30*time.Minute)
+		signedURLs[i] = h.signer.SignURL(rawPath, userID, 30*time.Minute)
 	}
 
 	json.NewEncoder(w).Encode(signedURLs)
