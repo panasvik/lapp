@@ -245,6 +245,22 @@ func (h *HandlerManager) handleGroupsReq(w http.ResponseWriter, r *http.Request)
 	}
 }
 
+func (h *HandlerManager) handleGroupsIDReq(w http.ResponseWriter, r *http.Request) {
+	userID, ok := UserIDFromContext(r.Context())
+	if !ok {
+		http.Error(w, "no group id provided", http.StatusBadRequest)
+		return
+	}
+	ids, err := h.db.GetUserGroupIDs(userID)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+	}
+	if err := json.NewEncoder(w).Encode(ids); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+}
+
 func (h *HandlerManager) handleGroupLibRefresh(w http.ResponseWriter, r *http.Request) {
 	groupID, ok := GroupIDFromContext(r.Context())
 	if !ok {

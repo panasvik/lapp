@@ -34,6 +34,7 @@ const (
 	ChangeMessageStatus Topic = 7
 	SendMessage         Topic = 8
 	InsertNewDevice     Topic = 9
+	GroupServiceMessage Topic = 10
 )
 
 type Event struct {

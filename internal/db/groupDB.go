@@ -92,6 +92,22 @@ func (db *GroupDB) GetGroupUserIDs(groupID int) ([]int, error) {
 }
 
 func (db *GroupDB) GetUserGroupNames(userID int) ([]string, error) {
+	groupIDs, err := db.GetUserGroupIDs(userID)
+	query2 := `SELECT groupName FROM groups WHERE groupID = ?`
+	var groupNames []string
+	for _, groupID := range groupIDs {
+		var groupName string
+		err = db.QueryRow(query2, groupID).Scan(&groupName)
+		if err != nil {
+			slog.Warn("unable to get groupName")
+			continue
+		}
+		groupNames = append(groupNames, groupName)
+	}
+	return groupNames, nil
+}
+
+func (db *GroupDB) GetUserGroupIDs(userID int) ([]int, error) {
 	query := `SELECT groupID FROM groupUsers WHERE userID = ?`
 	rows, err := db.Query(query, userID)
 	if err != nil {
@@ -110,18 +126,7 @@ func (db *GroupDB) GetUserGroupNames(userID int) ([]string, error) {
 	if err := rows.Err(); err != nil {
 		return nil, fmt.Errorf("error reading results: %w", err)
 	}
-	query2 := `SELECT groupName FROM groups WHERE groupID = ?`
-	var groupNames []string
-	for _, groupID := range groupIDs {
-		var groupName string
-		err = db.QueryRow(query2, groupID).Scan(&groupName)
-		if err != nil {
-			slog.Warn("unable to get groupName")
-			continue
-		}
-		groupNames = append(groupNames, groupName)
-	}
-	return groupNames, nil
+	return groupIDs, nil
 }
 
 func (db *GroupDB) GetGroupName(groupID int) (string, error) {

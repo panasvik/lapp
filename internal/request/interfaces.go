@@ -19,6 +19,7 @@ type GroupDB interface {
 	RegisterNewGroup(groupName string, creatorID int) (int, error)
 	GetGroupUserIDs(groupID int) ([]int, error)
 	GetUserGroupNames(userID int) ([]string, error)
+	GetUserGroupIDs(userID int) ([]int, error)
 	GetGroupName(groupID int) (string, error)
 }
 

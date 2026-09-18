@@ -101,6 +101,10 @@ func (db *MessageDB) ProcessEvent(e brocker.Event) util.Issue {
 			}
 			data.MessageID = msgID
 			e.Forward(data, brocker.SendMessage)
+			if data.MsgType == util.Consent {
+				body := util.UserGroup{data.RecipientID, data.GroupID, "user"}
+				e.Forward(body, brocker.AddUserToGroup)
+			}
 		}
 	case brocker.ChangeMessageStatus:
 		{

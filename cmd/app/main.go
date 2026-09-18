@@ -155,6 +155,7 @@ func createDBModule(appDB *db.AppDB, handler *brocker.Handler) *request.DBModule
 	handler.Subscribe(brocker.RemoveUserFromGroup, GroupDB)
 	handler.Subscribe(brocker.AddMessage, GroupMessageDB)
 	handler.Subscribe(brocker.ChangeMessageStatus, GroupMessageDB)
+	handler.Subscribe(brocker.GroupServiceMessage, GroupDB)
 	return &request.DBModule{
 		GroupDB:        GroupDB,
 		GroupMessageDB: GroupMessageDB,

@@ -84,6 +84,7 @@ func StartReqHandling(srv *http.Server, h *HandlerManager, n *Notifier) {
 		r.Post("/auth/logout", h.handleLogOut)
 		r.Post("/group/create", h.handleNewGroup)
 		r.Post("/notifier/subscribe", n.handleSubscription)
+		r.Post("/group/IDs", h.handleGroupsIDReq)
 
 		r.Get("/notifier/stream", n.handleStreamConnect)
 		r.Get("/messages/sync", h.handleGroupMessageSync)
