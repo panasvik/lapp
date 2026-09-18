@@ -2,7 +2,10 @@ package request
 
 import (
 	"crypto/rand"
+	"encoding/hex"
 	"errors"
+	"log"
+	"os"
 	"time"
 
 	"github.com/golang-jwt/jwt/v5"
@@ -105,7 +108,18 @@ func (a *Authenticator) CheckToken(token string) (TokenInfo, error) {
 }
 
 func NewAuthenticator() *Authenticator {
-	key := generateHMACSecret(32)
+	str := os.Getenv("SECRET")
+	slice, err := hex.DecodeString(str)
+	if err != nil {
+		log.Fatalf("Ошибка декодирования: %v", err)
+	}
+
+	if len(slice) != 32 {
+		log.Fatalf("Ожидалось 32 байта, получено %d", len(slice))
+	}
+	var key []byte
+	copy(key[:], slice)
+
 	return &Authenticator{key: key}
 }
 
