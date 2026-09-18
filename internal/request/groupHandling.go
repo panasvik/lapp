@@ -304,17 +304,19 @@ func (h *HandlerManager) handleGroupMessage(w http.ResponseWriter, r *http.Reque
 		http.Error(w, "unauthorized", http.StatusUnauthorized)
 		return
 	}
-	groupID, ok := GroupIDFromContext(r.Context())
-	if !ok {
+	groupID, err := GroupIDFromURL(r)
+	if err != nil {
 		http.Error(w, "no group id provided", http.StatusBadRequest)
 		return
 	}
 	var req RecIDReq
-	err := json.NewDecoder(r.Body).Decode(&req)
+	err = json.NewDecoder(r.Body).Decode(&req)
+
 	if err != nil || req.RecID <= 0 {
 		http.Error(w, "invalid recipient id provided", http.StatusBadRequest)
 		return
 	}
+
 	if req.MsgType == util.Invitation || req.MsgType == util.LibUpdate {
 		if !h.isGroupMember(groupID, userID) {
 			http.Error(w, "not a group member", http.StatusForbidden)
