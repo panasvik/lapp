@@ -50,6 +50,7 @@ type UserDB interface {
 	RegisterNewUser(userName string, password string) (int, error)
 	GetUserIDByCredentials(userName string, password string) (int, error)
 	GetUserNameByID(userID int) (string, error)
+	GetUserIDByName(name string) (int, error)
 }
 
 type WebPushDB interface {

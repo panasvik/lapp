@@ -89,6 +89,7 @@ func StartReqHandling(srv *http.Server, h *HandlerManager, n *Notifier) {
 		r.Get("/notifier/stream", n.handleStreamConnect)
 		r.Get("/messages/sync", h.handleGroupMessageSync)
 		r.Get("/groups", h.handleGroupsReq)
+		r.Get("/user/find/{username}", h.handleFindUser)
 	})
 
 	router.Group(func(r chi.Router) {
@@ -420,6 +421,23 @@ func (h *HandlerManager) handleRandomImage(w http.ResponseWriter, r *http.Reques
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
+}
+
+func (h *HandlerManager) handleFindUser(w http.ResponseWriter, r *http.Request) {
+	targetName := chi.URLParam(r, "username")
+	if targetName == "" {
+		http.Error(w, "empty username", http.StatusBadRequest)
+		return
+	}
+
+	targetID, err := h.db.GetUserIDByName(targetName)
+	if err != nil {
+		http.Error(w, "user not found", http.StatusNotFound)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]int{"userID": targetID})
 }
 
 func NewHandler(ctx context.Context, cm *caching.CacheManager, um *upload.Manager, db *DBModule, handler *brocker.Handler, signer *Signer) *HandlerManager {

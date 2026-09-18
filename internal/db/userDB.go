@@ -81,3 +81,10 @@ func (db *UserDB) GetUserNameByID(userID int) (string, error) {
 	err := db.QueryRow(query, userID).Scan(&userName)
 	return userName, err
 }
+
+func (db *UserDB) GetUserIDByName(name string) (int, error) {
+	query := `SELECT userID FROM users WHERE userName = ?`
+	var id int
+	err := db.QueryRow(query, name).Scan(&id)
+	return id, err
+}
