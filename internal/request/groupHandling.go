@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"slices"
 	"strconv"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 )
@@ -149,6 +150,12 @@ func (h *HandlerManager) handleGroupImage(w http.ResponseWriter, r *http.Request
 }
 
 func (h *HandlerManager) handleGroupManifest(w http.ResponseWriter, r *http.Request) {
+	userID, ok := UserIDFromContext(r.Context())
+	if !ok {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
+
 	groupID, ok := GroupIDFromContext(r.Context())
 	if !ok {
 		http.Error(w, "no group id", http.StatusBadRequest)
@@ -166,15 +173,20 @@ func (h *HandlerManager) handleGroupManifest(w http.ResponseWriter, r *http.Requ
 	}
 	defer r.Body.Close()
 
-	imgPaths, err := h.db.GetNamesGroup(req.Date, groupID)
+	imgNames, err := h.db.GetNamesGroup(req.Date, groupID)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	if err := json.NewEncoder(w).Encode(imgPaths); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
+
+	signedURLs := make([]string, len(imgNames))
+	for i, name := range imgNames {
+		rawPath := "/image/" + name
+		signedURLs[i] = h.signer.SignURL(rawPath, userID, 30*time.Minute)
 	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(signedURLs)
 }
 
 func (h *HandlerManager) handleGroupUpload(w http.ResponseWriter, r *http.Request) {
@@ -272,10 +284,19 @@ func (h *HandlerManager) handleGroupLibRefresh(w http.ResponseWriter, r *http.Re
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	if err := json.NewEncoder(w).Encode(imgNames); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+	userID, ok := UserIDFromContext(r.Context())
+	if !ok {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
 		return
 	}
+	signedURLs := make([]string, len(imgNames))
+	for i, name := range imgNames {
+		rawPath := "/image/" + name
+		signedURLs[i] = h.signer.SignURL(rawPath, userID, 30*time.Minute)
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(signedURLs)
 }
 
 func (h *HandlerManager) handleGroupMessage(w http.ResponseWriter, r *http.Request) {
