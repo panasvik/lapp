@@ -359,10 +359,12 @@ func (h *HandlerManager) handleRandomManifest(w http.ResponseWriter, r *http.Req
 	defer r.Body.Close()
 
 	dates, err := h.db.GetDatesUser(userID)
-	if err != nil {
+	size := len(dates)
+	if err != nil || size <= 0 {
 		http.Error(w, "user has no photos", http.StatusBadRequest)
 		return
 	}
+
 	date := dates[rand.N(len(dates))]
 	imgNames, err := h.db.GetNamesUser(date, userID)
 	if err != nil {
@@ -394,11 +396,13 @@ func (h *HandlerManager) handleRandomImage(w http.ResponseWriter, r *http.Reques
 	cOpt := GetImgOptions(r)
 
 	imgNames, err := h.db.GetLibsNamesUser(userID)
-	if err != nil {
+	size := len(imgNames)
+	if err != nil || size <= 0 {
 		http.Error(w, "user has no photos", http.StatusBadRequest)
 		return
 	}
-	imgName := imgNames[rand.N(len(imgNames))]
+
+	imgName := imgNames[rand.N(size)]
 	cacheImgPath, err := h.cacheManager.GetImg(imgName, cOpt.Category)
 	if err == nil {
 		rFunc := func(path string) { http.ServeFile(w, r, path) }
