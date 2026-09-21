@@ -41,10 +41,12 @@ func GetIntQueryParam(u url.Values, key string, defaultVal int, cond func(val in
 
 func GetBimgTypeParam(u url.Values, key string) bimg.ImageType {
 	valS := u.Get(key)
-	switch {
-	case valS == "JPEG":
+	switch valS {
+	case "HEIC", "HEIF":
+		return bimg.HEIF
+	case "JPEG", "JPG":
 		return bimg.JPEG
-	case valS == "PNG":
+	case "PNG":
 		return bimg.PNG
 	}
 	return bimg.JPEG
