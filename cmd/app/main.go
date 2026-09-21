@@ -7,7 +7,6 @@ import (
 	"ImageCacheProject/internal/request"
 	"ImageCacheProject/internal/upload"
 	"ImageCacheProject/internal/util"
-	"bufio"
 	"context"
 	"flag"
 	"fmt"
@@ -122,21 +121,9 @@ func setUpLogger() {
 
 }
 
-func readInput(cancelChan chan<- struct{}, scanner *bufio.Scanner) {
-	for scanner.Scan() {
-		line := scanner.Text()
-		if line == "exit" {
-			cancelChan <- struct{}{}
-			break
-		}
-	}
-}
-
 func mainSetup() (context.Context, context.CancelFunc, chan struct{}) {
-	ctx, cancel := context.WithTimeout(context.Background(), time.Hour)
-	scanner := bufio.NewScanner(os.Stdin)
+	ctx, cancel := context.WithCancel(context.Background())
 	cancelChan := make(chan struct{})
-	go readInput(cancelChan, scanner)
 	return ctx, cancel, cancelChan
 }
 
