@@ -21,8 +21,6 @@ var (
 	ErrDeprecatedSub = errors.New("webpush subscription is deprecated")
 )
 var (
-	vapidPublicKey  = os.Getenv("VAPID_PUBLIC_KEY")
-	vapidPrivateKey = os.Getenv("VAPID_PRIVATE_KEY")
 	vapidSubscriber = "https://pcloudcom.tech/vapid_messages"
 )
 
@@ -33,9 +31,11 @@ type SubscribeRequest struct {
 type ClientDevices map[string]chan util.Message
 
 type Notifier struct {
-	webPdb     WebPushDB
-	mu         sync.RWMutex
-	sseClients map[int]ClientDevices
+	webPdb          WebPushDB
+	mu              sync.RWMutex
+	sseClients      map[int]ClientDevices
+	vapidPublicKey  string
+	vapidPrivateKey string
 }
 
 func (n *Notifier) handleSubscription(w http.ResponseWriter, r *http.Request) {
@@ -214,8 +214,8 @@ func (n *Notifier) sendWebPushes(m util.Message) error {
 func (n *Notifier) sendWebPush(payload []byte, sub webpush.Subscription) error {
 	resp, err := webpush.SendNotification(payload, &sub, &webpush.Options{
 		Subscriber:      vapidSubscriber,
-		VAPIDPublicKey:  vapidPublicKey,
-		VAPIDPrivateKey: vapidPrivateKey,
+		VAPIDPublicKey:  n.vapidPublicKey,
+		VAPIDPrivateKey: n.vapidPrivateKey,
 		TTL:             86400,
 	})
 	if err != nil {
@@ -233,7 +233,9 @@ func (n *Notifier) sendWebPush(payload []byte, sub webpush.Subscription) error {
 
 func NewNotifier(db WebPushDB) *Notifier {
 	return &Notifier{
-		webPdb:     db,
-		sseClients: make(map[int]ClientDevices),
+		webPdb:          db,
+		sseClients:      make(map[int]ClientDevices),
+		vapidPublicKey:  os.Getenv("VAPID_PUBLIC_KEY"),
+		vapidPrivateKey: os.Getenv("VAPID_PRIVATE_KEY"),
 	}
 }
