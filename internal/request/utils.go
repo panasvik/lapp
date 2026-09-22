@@ -11,8 +11,6 @@ import (
 	"github.com/h2non/bimg"
 )
 
-const Domain string = "pcloudcom.tech"
-
 type contextKey string
 
 func GetImgOptions(r *http.Request) caching.Options {

@@ -9,3 +9,4 @@ Dockerfile.debug
 app.log
 main.exe
 .env
+loveApp.db
